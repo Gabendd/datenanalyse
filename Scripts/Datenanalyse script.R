@@ -16,8 +16,10 @@ required_packages <- c(
   "scales",
   "huxtable",
   "readr",
-  "stringr"
+  "stringr",
+  "tinytex"
 )
+
 
 missing_packages <- required_packages[
   !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
@@ -182,49 +184,6 @@ swiss_analysis_year_range <- range(swiss_analysis_data$year, na.rm = TRUE)
 swiss_analysis_missingness <- swiss_analysis_data |>
   dplyr::summarize(dplyr::across(everything(), ~ sum(is.na(.x))))
 
-# ============================================================
-# CHAPTER 5 — VISUALIZATION
-# ============================================================
-# This chapter plots the main series used in the analysis.
-
-swiss_analysis_plot_data <- swiss_analysis_data |>
-  tidyr::pivot_longer(
-    cols = c(net_migration, gdp_growth, employment_ratio, unemployment_total),
-    names_to = "series",
-    values_to = "value"
-  ) |>
-  dplyr::mutate(
-    series = dplyr::recode(
-      series,
-      net_migration = "Net migration",
-      gdp_growth = "GDP growth",
-      employment_ratio = "Employment ratio",
-      unemployment_total = "Unemployment total"
-    )
-  )
-
-swiss_analysis_plot <- ggplot2::ggplot(
-  swiss_analysis_plot_data,
-  ggplot2::aes(x = year, y = value)
-) +
-  ggplot2::geom_line(color = "#2C7FB8", linewidth = 0.6) +
-  ggplot2::geom_point(color = "#2C7FB8", size = 1) +
-  ggplot2::facet_wrap(~series, scales = "free_y", ncol = 1) +
-  ggplot2::labs(
-    title = "Swiss migration and macroeconomic indicators",
-    subtitle = "Yearly series for migration, GDP growth, employment, and unemployment.",
-    x = "Year",
-    y = NULL,
-    caption = "Sources: Swiss immigration file and World Bank data"
-  ) +
-  ggplot2::theme_minimal(base_size = 11) +
-  ggplot2::theme(
-    plot.title = ggplot2::element_text(face = "bold"),
-    plot.subtitle = ggplot2::element_text(color = "gray40"),
-    strip.text = ggplot2::element_text(face = "bold")
-  )
-
-print(swiss_analysis_plot)
 
 # ============================================================
 # CHAPTER 6 — REGRESSION MODELS
@@ -249,71 +208,54 @@ swiss_migration_model_controlled <- stats::lm(
   data = swiss_regression_data
 )
 
-summary(swiss_migration_model)
-summary(swiss_migration_model_controlled)
-
-
 # ============================================================
-# REGRESSION INTERPRETATION
+# CHAPTER 7 — TABLE EXPORT (HTML) + VIEWER TABLES
 # ============================================================
+# Build one publication-style regression table from the model objects.
 
-# MODEL 1: net_migration ~ gdp_growth
-# ------------------------------------------------------------
-# Coefficient for gdp_growth: 1163 (p = 0.591)
-# Interpretation: No statistically significant relationship. For each 1% increase in GDP growth, net migration increases by 1163, but this effect is not distinguishable from zero.
-# Model fit: R-squared = 0.009 (0.9% of variance explained) - very poor fit
+make_regression_table <- function(models, model_names) {
+  model_list <- stats::setNames(models, model_names)
 
-# MODEL 2: net_migration ~ gdp_growth + unemployment_total
-# ------------------------------------------------------------
-# Coefficient for gdp_growth: -186.9 (p = 0.926) - Not statistically significant
-# Coefficient for unemployment_total: 11709.4 (p = 0.00785) - Statistically significant at 1% level
-# Interpretation: Holding GDP growth constant, each 1 percentage point increase in unemployment is associated with 11,709 additional net migrants. The GDP growth coefficient is not significant.
-# Model fit: R-squared = 0.214 (21.4% of variance explained)
-# Overall model significance: p = 0.02394 (significant at 5% level)
-
-# ============================================================
-# CHAPTER 7 — TABLE EXPORT (PDF)
-# ============================================================
-# Build a readable regression table and export as a PDF with borders
-# and simple styling (uses huxtable::quick_pdf).
-
-make_regression_table <- function(model, model_name) {
-  results <- as.data.frame(coef(summary(model)))
-  results$term <- rownames(results)
-  rownames(results) <- NULL
-
-  results |>
-    dplyr::mutate(model = model_name, .before = term) |>
-    dplyr::select(
-      model,
-      term,
-      estimate = Estimate,
-      std_error = `Std. Error`,
-      statistic = `t value`,
-      p_value = `Pr(>|t|)`
+  do.call(
+    huxtable::huxreg,
+    c(
+      model_list,
+      list(
+        number_format = "%.3f",
+        stars = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
+        statistics = c(
+          "N" = "nobs",
+          "R-squared" = "r.squared",
+          "Adj. R-squared" = "adj.r.squared",
+          "Residual SE" = "sigma"
+        )
+      )
     )
+  )
 }
 
-swiss_regression_results <- dplyr::bind_rows(
-  make_regression_table(swiss_migration_model, "GDP growth only"),
-  make_regression_table(
-    swiss_migration_model_controlled,
-    "GDP growth + unemployment"
+swiss_regression_table <- make_regression_table(
+  models = list(
+    swiss_migration_model,
+    swiss_migration_model_controlled
+  ),
+  model_names = c("GDP growth only", "GDP growth + unemployment")
+)
+
+swiss_regression_table
+
+html_file <- normalizePath(
+  "tables/swiss_regression_results.html",
+  winslash = "/",
+  mustWork = FALSE
+)
+
+invisible(
+  huxtable::quick_html(
+    swiss_regression_table,
+    file = html_file,
+    open = FALSE
   )
 )
 
-swiss_regression_fit <- tibble::tibble(
-  model = c("GDP growth only", "GDP growth + unemployment"),
-  n = c(
-    stats::nobs(swiss_migration_model),
-    stats::nobs(swiss_migration_model_controlled)
-  ),
-  r_squared = c(
-    summary(swiss_migration_model)$r.squared,
-    summary(swiss_migration_model_controlled)$r.squared
-  ),
-  adjusted_r_squared = c(
-    summary(swiss_migration_model)$adj.r.squared,
-    summary(swiss_migration_model_controlled)$adj.r.squared
-  )
-)
+utils::browseURL(html_file)
