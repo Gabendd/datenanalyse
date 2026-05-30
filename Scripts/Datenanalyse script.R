@@ -823,3 +823,5 @@ saveRDS(session_objects, file = "data/processed/session_objects.rds")
 message(
   "Objekte wurden in Listen zusammengefasst und nach data/processed/session_objects.rds gespeichert."
 )
+
+
