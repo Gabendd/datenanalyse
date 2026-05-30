@@ -1,3 +1,0 @@
-model,n,r_squared,adjusted_r_squared
-Simple trend model,449,0.0379396494205916,0.03578738912846757
-Trend model with origin fixed effects,449,0.4385033937530114,0.41905201016477844

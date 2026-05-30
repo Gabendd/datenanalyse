@@ -17,7 +17,8 @@ required_packages <- c(
   "sf",
   "rvest",
   "BFS",
-  "tidyr"
+  "tidyr",
+  "tinytex"
 )
 
 missing_packages <- setdiff(required_packages, rownames(installed.packages()))
@@ -111,6 +112,24 @@ swiss_yearly_year_range <- range(
 )
 swiss_yearly_missingness <- swiss_immigration_yearly_data |>
   dplyr::summarize(dplyr::across(everything(), ~ sum(is.na(.x))))
+
+
+mean_by_year <- swiss_immigration_data |>
+  dplyr::group_by(year) |>
+  dplyr::summarize(
+    mean_net_migration = mean(net_migration, na.rm = TRUE),
+    sd_net_migration = sd(net_migration, na.rm = TRUE),
+    n_origins = dplyr::n(),
+    .groups = "drop"
+  ) |>
+  dplyr::arrange(year)
+
+# show full tibble in console
+print(mean_by_year, n = Inf)
+
+#Wir sehen, dass die durchschnittliche Nettozuwanderung pro Herkunftsland im Zeitverlauf stark schwankt, 
+# mit einigen Jahren deutlich über 1000 und anderen Jahren unter 500. Zwischen 1996 und 1999 sogat negativ. 
+
 
 # ============================================================
 # KAPITEL 3 — WORLD BANK DATEN FÜR DIE SCHWEIZ
@@ -310,13 +329,16 @@ html_file <- normalizePath(
   mustWork = FALSE
 )
 
-invisible(
-  huxtable::quick_html(
-    swiss_regression_table,
-    file = html_file,
-    open = FALSE
-  )
+# A) huxtable -> PDF (requires LaTeX; install tinytex::install_tinytex() once if needed)
+huxtable::quick_pdf(
+  swiss_regression_table,
+  file = "tables/swiss_regression_results.pdf",
+  open = FALSE
 )
+
+
+
+
 
 # ============================================================
 # KAPITEL 8 — VISUALISIERUNGEN
@@ -386,6 +408,12 @@ swiss_migration_by_country <- swiss_immigration_data |>
     panel.grid.minor = element_blank()
   )
 
+
+
+
+
+
+
 swiss_migration_by_country
 
 # --- Kreisdiagramm: Anteil an gesamter Nettozuwanderung ---
@@ -445,6 +473,14 @@ swiss_world_map_all <- rnaturalearth::ne_countries(
 ) |>
   dplyr::select(iso_a3_eh, name_long, continent, geometry) |>
   dplyr::rename(iso_a3 = iso_a3_eh)
+
+
+# Example: pattern to exclude island/overseas territory names (adjust list as needed)
+territory_names <- c(
+  "Azores", "Canary", "Madeira", "Faroe", "Svalbard", "Greenland",
+  "Reunion", "Réunion", "Martinique", "Guadeloupe", "Mayotte",
+  "Ceuta", "Melilla", "Saint", "Isle", "Islands?", "Guiana", "French Guiana"
+)
 
 swiss_world_map_data <- swiss_world_map_all |>
   dplyr::filter(
@@ -533,6 +569,13 @@ plots_list <- list(
   swiss_migration_world_map = get_if_exists("swiss_migration_world_map")
 )
 plots_list <- plots_list[!vapply(plots_list, is.null, logical(1))]
+
+
+
+
+
+
+
 
 # Liste mit Regressions-Modellen
 model_list <- list(
