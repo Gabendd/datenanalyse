@@ -271,6 +271,119 @@ if (!is.null(bfs_raw) && exists("bfs_clean")) {
       by = c("origin_en", "year")
     )
 }
+
+# ── 5E: BFS KANTONALE IMMIGRATION AUS DEM AUSLAND ───────────────────────────
+# Zweckgebundener API-Pull für die 2024-Karte.
+# Die Daten bleiben auf diesen einen Plot beschränkt.
+
+bfs_canton_rds <- "data/raw/bfs_canton_immigration_2024.rds"
+latest_year_canton <- 2024
+meta_canton <- BFS::bfs_get_metadata(number_bfs = "px-x-0103020200_102")
+
+if (file.exists(bfs_canton_rds)) {
+  bfs_canton_raw <- readRDS(bfs_canton_rds)
+  message("Loaded BFS cantonal data from ", bfs_canton_rds)
+} else {
+  bfs_canton_raw <- tryCatch(
+    {
+      BFS::bfs_get_data(
+        number_bfs = "px-x-0103020200_102",
+        language = "de",
+        query = list(
+          Jahr = as.character(latest_year_canton),
+          Kanton = meta_canton$values[[2]][2:27],
+          Staatsangehörigkeit = meta_canton$values[[3]][-1],
+          Geschlecht = "0",
+          Altersklasse = "0"
+        ),
+        clean_names = TRUE
+      )
+    },
+    error = function(e) {
+      message("Cantonal BFS API call failed: ", conditionMessage(e))
+      NULL
+    }
+  )
+  if (!is.null(bfs_canton_raw)) {
+    saveRDS(bfs_canton_raw, bfs_canton_rds)
+    message("Saved BFS cantonal API result to ", bfs_canton_rds)
+  }
+}
+
+if (!is.null(bfs_canton_raw)) {
+  message("Cantonal BFS column names: ", paste(names(bfs_canton_raw), collapse = " | "))
+
+  bfs_canton_clean <- bfs_canton_raw |>
+    dplyr::transmute(
+      canton = stringr::str_trim(.data[["kanton"]]),
+      nationality = stringr::str_trim(.data[["staatsangehorigkeit"]]),
+      year = as.integer(.data[["jahr"]]),
+      immigration_from_abroad = as.numeric(
+        .data[["einwanderung_der_standigen_wohnbevolkerung"]]
+      )
+    ) |>
+    dplyr::filter(
+      !is.na(canton),
+      !is.na(nationality),
+      nationality != "",
+      canton != "Schweiz",
+      nationality != "Schweiz"
+    )
+
+  bfs_canton_map_data <- bfs_canton_clean |>
+    dplyr::filter(year == latest_year_canton) |>
+    dplyr::group_by(canton) |>
+    dplyr::summarize(
+      immigration_from_abroad = sum(immigration_from_abroad, na.rm = TRUE),
+      .groups = "drop"
+    ) |>
+    dplyr::mutate(
+      canton_name = dplyr::recode(
+        canton,
+        "Bern / Berne" = "Bern",
+        "Fribourg / Freiburg" = "Fribourg",
+        "Graubünden / Grigioni / Grischun" = "Graubünden",
+        "Valais / Wallis" = "Valais",
+        .default = canton
+      )
+    )
+
+  swiss_canton_map_data <- BFS::bfs_get_base_maps(
+    geom = "kant",
+    return_sf = TRUE
+  ) |>
+    dplyr::left_join(
+      bfs_canton_map_data |>
+        dplyr::select(canton_name, immigration_from_abroad),
+      by = c("name" = "canton_name")
+    )
+
+  swiss_canton_immigration_map <- ggplot2::ggplot(swiss_canton_map_data) +
+    ggplot2::geom_sf(
+      ggplot2::aes(fill = immigration_from_abroad),
+      color = "white",
+      linewidth = 0.2
+    ) +
+    ggplot2::scale_fill_gradient(
+      low = "#deebf7",
+      high = "#08519c",
+      na.value = "grey90",
+      labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
+    ) +
+    ggplot2::labs(
+      title = paste("Immigration aus dem Ausland nach Kanton", latest_year_canton),
+      fill = "Immigration"
+    ) +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(
+      plot.title = ggplot2::element_text(face = "bold", size = 14),
+      axis.text = ggplot2::element_blank(),
+      axis.title = ggplot2::element_blank(),
+      axis.ticks = ggplot2::element_blank(),
+      panel.grid = ggplot2::element_blank()
+    )
+}
+
 # ============================================================
 # KAPITEL 6 — REGRESSIONSMODELLE
 # ============================================================
@@ -329,10 +442,10 @@ html_file <- normalizePath(
   mustWork = FALSE
 )
 
-# A) huxtable -> PDF (requires LaTeX; install tinytex::install_tinytex() once if needed)
-huxtable::quick_pdf(
+# Export regression table to HTML (does not require LaTeX)
+huxtable::quick_html(
   swiss_regression_table,
-  file = "tables/swiss_regression_results.pdf",
+  file = "tables/swiss_regression_results.html",
   open = FALSE
 )
 
@@ -486,7 +599,7 @@ swiss_world_map_data <- swiss_world_map_all |>
   dplyr::filter(
     continent == "Europe",
     !iso_a3 %in% c("RUS"),
-    !stringr::str_detect(name_long, territory_pattern)
+    !stringr::str_detect(name_long, paste(territory_names, collapse = "|"))
   ) |>
   dplyr::left_join(swiss_migration_map_data, by = "iso_a3")
 
@@ -518,6 +631,114 @@ swiss_migration_world_map <- ggplot(swiss_world_map_data) +
   )
 
 swiss_migration_world_map
+
+# ============================================================
+# KAPITEL 8B — EXPORT DER PLOTS (PNG UND PDF)
+# ============================================================
+
+# Exportiere alle Visualisierungen in hoher Qualität
+
+# 1. Nettozuwanderung über die Jahre (Liniendiagramm)
+ggsave(
+  filename = "figures/01_nettozuwanderung_over_time.png",
+  plot = swiss_migration_over_time,
+  width = 12,
+  height = 6,
+  dpi = 300,
+  bg = "white"
+)
+
+ggsave(
+  filename = "figures/01_nettozuwanderung_over_time.pdf",
+  plot = swiss_migration_over_time,
+  width = 12,
+  height = 6,
+  bg = "white"
+)
+
+message("✓ Exported: 01_nettozuwanderung_over_time.png und .pdf")
+
+# 2. Nettozuwanderung nach Herkunftsland (Balkendiagramm)
+ggsave(
+  filename = "figures/02_nettozuwanderung_by_country.png",
+  plot = swiss_migration_by_country,
+  width = 12,
+  height = 8,
+  dpi = 300,
+  bg = "white"
+)
+
+ggsave(
+  filename = "figures/02_nettozuwanderung_by_country.pdf",
+  plot = swiss_migration_by_country,
+  width = 12,
+  height = 8,
+  bg = "white"
+)
+
+message("✓ Exported: 02_nettozuwanderung_by_country.png und .pdf")
+
+# 3. Anteil nach Herkunftsland (Kreisdiagramm)
+ggsave(
+  filename = "figures/03_pie_total_net_migration.png",
+  plot = pie_total_net,
+  width = 10,
+  height = 8,
+  dpi = 300,
+  bg = "white"
+)
+
+ggsave(
+  filename = "figures/03_pie_total_net_migration.pdf",
+  plot = pie_total_net,
+  width = 10,
+  height = 8,
+  bg = "white"
+)
+
+message("✓ Exported: 03_pie_total_net_migration.png und .pdf")
+
+# 4. Weltkarte mit Nettozuwanderung nach Herkunftsland
+ggsave(
+  filename = "figures/04_swiss_migration_world_map.png",
+  plot = swiss_migration_world_map,
+  width = 14,
+  height = 10,
+  dpi = 300,
+  bg = "white"
+)
+
+ggsave(
+  filename = "figures/04_swiss_migration_world_map.pdf",
+  plot = swiss_migration_world_map,
+  width = 14,
+  height = 10,
+  bg = "white"
+)
+
+message("✓ Exported: 04_swiss_migration_world_map.png und .pdf")
+
+# 5. Kantonskarte: Immigration aus dem Ausland
+if (exists("swiss_canton_immigration_map")) {
+  ggsave(
+    filename = "figures/05_swiss_canton_immigration_map.png",
+    plot = swiss_canton_immigration_map,
+    width = 12,
+    height = 10,
+    dpi = 300,
+    bg = "white"
+  )
+  ggsave(
+    filename = "figures/05_swiss_canton_immigration_map.pdf",
+    plot = swiss_canton_immigration_map,
+    width = 12,
+    height = 10,
+    bg = "white"
+  )
+  message("✓ Exported: 05_swiss_canton_immigration_map.png und .pdf")
+}
+
+message("\n✓✓✓ Alle Plots wurden erfolgreich in den figures/ Ordner exportiert!")
 
 # ============================================================
 # ORGANISATION DER OBJEKTE UND DEUTSCHE KOMMENTARE
@@ -566,16 +787,10 @@ plots_list <- list(
   swiss_migration_over_time = get_if_exists("swiss_migration_over_time"),
   swiss_migration_by_country = get_if_exists("swiss_migration_by_country"),
   pie_total_net = get_if_exists("pie_total_net"),
-  swiss_migration_world_map = get_if_exists("swiss_migration_world_map")
+  swiss_migration_world_map = get_if_exists("swiss_migration_world_map"),
+  swiss_canton_immigration_map = get_if_exists("swiss_canton_immigration_map")
 )
 plots_list <- plots_list[!vapply(plots_list, is.null, logical(1))]
-
-
-
-
-
-
-
 
 # Liste mit Regressions-Modellen
 model_list <- list(
