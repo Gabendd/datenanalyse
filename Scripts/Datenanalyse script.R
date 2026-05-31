@@ -1,24 +1,13 @@
+
 # ============================================================
-# KAPITEL 1 — SETUP: PAKETE, PFADE, INDIKATOREN
+# DATENANALYSE: BIP-WACHSTUM VS. NETTOZUWANDERUNG IN DER SCHWEIZ
 # ============================================================
 
+# Define all required packages
 required_packages <- c(
-  "readr",
-  "dplyr",
-  "stringr",
-  "tibble",
-  "WDI",
-  "ggplot2",
-  "scales",
-  "huxtable",
-  "countrycode",
-  "rnaturalearth",
-  "rnaturalearthdata",
-  "sf",
-  "rvest",
-  "BFS",
-  "tidyr",
-  "tinytex"
+  "readr", "dplyr", "stringr", "ggplot2", "WDI", "BFS", 
+  "rnaturalearth", "countrycode", "huxtable", "scales", 
+  "tidyr", "data.table", "foreign", "boot", "sf", "tibble"
 )
 
 missing_packages <- setdiff(required_packages, rownames(installed.packages()))
