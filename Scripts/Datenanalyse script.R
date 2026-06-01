@@ -7,6 +7,7 @@ required_packages <- c(
   "readr",
   "dplyr",
   "stringr",
+  "stringi",
   "ggplot2",
   "WDI",
   "BFS",
@@ -49,7 +50,7 @@ invisible(lapply(paths, function(path) {
 # (z.B. "Renseignements|Source|© OFS") herausgefiltert.
 
 # Immigrationsdaten einlesen, bereinigen und filtern
-swiss_immigration_data <- readr::read_csv(
+RAW_swiss_immigration <- readr::read_csv(
   "data/swiss_immigration_countries_year.csv",
   show_col_types = FALSE
 ) |>
@@ -75,7 +76,7 @@ swiss_immigration_data <- readr::read_csv(
 
 # Jetzt werden die Daten auf Jahresbasis aggregiert, um die Nettozuwanderung pro Jahr zu erhalten.
 # Zusätzlich werden die durchschnittliche Nettozuwanderung und die Anzahl der Herkunftsländer pro Jahr berechnet.
-swiss_immigration_yearly_data <- swiss_immigration_data |>
+YEARLY_swiss_immigration <- RAW_swiss_immigration |>
   dplyr::group_by(year) |>
   dplyr::summarize(
     net_migration = sum(net_migration, na.rm = TRUE),
@@ -85,7 +86,7 @@ swiss_immigration_yearly_data <- swiss_immigration_data |>
   ) |>
   dplyr::arrange(year)
 
-summary(swiss_immigration_yearly_data$net_migration)
+summary(YEARLY_swiss_immigration$net_migration)
 #Summary zeigt uns, dass wir teilweise Auswanderungen haben. Das Minimum von -10589
 # zeigt, dass es Jahre gab, in denen die Schweiz insgesamt
 # mehr Auswanderungen als Einwanderungen verzeichnete (negative Nettozuwanderung).
@@ -129,8 +130,8 @@ world_bank_file <- "data/world_bank_raw.rds"
 
 # Definiere den Zeitrahmen (min/max Jahr der Schweizer Einwanderungsdaten). Somit werden nur die Jahre abgefragt, für die wir auch Einwanderungsdaten haben.
 # Das spart Zeit und API-Aufrufe.
-start_year <- min(swiss_immigration_yearly_data$year, na.rm = TRUE)
-end_year <- max(swiss_immigration_yearly_data$year, na.rm = TRUE)
+start_year <- min(YEARLY_swiss_immigration$year, na.rm = TRUE)
+end_year <- max(YEARLY_swiss_immigration$year, na.rm = TRUE)
 
 # Funktion zum Laden der Daten via API
 fetch_world_bank_data <- function() {
@@ -192,7 +193,7 @@ swiss_world_bank_data <- world_bank_raw_data |>
 #Jetzt werden die aufbereiteten Einwanderungsdaten mit den World Bank Indikatoren zusammengeführt,
 # um einen Datensatz zu erstellen, der alle benötigten Variablen für die Analyse enthält.
 
-swiss_analysis_data <- swiss_immigration_yearly_data |>
+ANALYSIS_swiss <- YEARLY_swiss_immigration |>
   dplyr::left_join(
     swiss_world_bank_data,
     by = "year"
@@ -200,115 +201,97 @@ swiss_analysis_data <- swiss_immigration_yearly_data |>
   dplyr::arrange(year)
 
 cat("NA counts per variable:\n")
-print(colSums(is.na(swiss_analysis_data)))
+print(colSums(is.na(ANALYSIS_swiss)))
 
 #Wir haben keine NA, was eine gute Nachricht ist.
 # ============================================================
 # KAPITEL 3 — BFS-DATEN AUFBEREITEN
 # ============================================================
 
-# --- Meta: Ziel dieses Kapitels
-# Lade und bereinige BFS-Populations- und Kantonsdaten.
-# Erzeuge saubere Tabellen (bfs_clean, bfs_canton_map_data) und
-# erweitere die Swiss-Immigration-Daten mit resident_population.
+# Das Kapitel importiert die BFS Einwanderungsdaten auf Länderebene,
+# um sie mit den Schweizer Einwanderungsdaten zusammenzuführen.
 
-# Konfiguration: Dataset-ID und lokale Pfade
+# Konfiguration: Hier wird den Datensatz definiert.
 bfs_dataset_id <- "px-x-0103020200_102"
-bfs_pop_rds <- "data/raw/bfs_population_immigration.rds"
-bfs_canton_rds <- "data/raw/bfs_canton_immigration_2024.rds"
-latest_year_canton <- 2024
+bfs_pop_rds <- "data/bfs_population_immigration.rds"
 
 
-# --- 1) BFS: Population (Nationalität x Jahr) laden und bereinigen
-# Prüfe lokalen Cache, sonst API-Aufruf; konvertiere Spalten mithilfe von dplyr.
+# Jetzt wir das BFS API gesendet. Zuerst wird geprüft, ob die Daten bereits lokal als RDS-Datei vorliegen. Wenn ja, werden sie geladen.
+# Wenn nein, wird der API-Aufruf durchgeführt, um die Daten zu holen, und danach werden sie als RDS-Datei gespeichert, um zukünftige Aufrufe zu vermeiden.
 if (file.exists(bfs_pop_rds)) {
   bfs_raw <- readRDS(bfs_pop_rds)
 } else {
-  bfs_raw <- tryCatch(
-    BFS::bfs_get_data(
-      number_bfs = bfs_dataset_id,
-      language = "en",
-      clean_names = TRUE
+  bfs_raw <- BFS::bfs_get_data(
+    number_bfs = bfs_dataset_id,
+    language = "en",
+    clean_names = TRUE
+  )
+  saveRDS(bfs_raw, bfs_pop_rds)
+}
+
+#Wie sieht die Struktur des BFS API aus ?
+str(bfs_raw)
+
+
+# Hier werden die BFS-Daten bereinigt und in ein einheitliches Format gebracht,
+# damit sie später mit den Einwanderungsdaten der Schweiz zusammengeführt werden können.
+#Zuerst wird das bfs clean erstelelt, es beinhaltet die Spalten citizenship, year und pop_bfs
+#und nur Ländernamen, die bereits in den Schweizer Einwanderungsdaten enthalten sind.
+bfs_clean <- bfs_raw |>
+  filter(!is.na(citizenship), citizenship != 'Citizenship - total') |>
+  group_by(citizenship, year) |>
+  summarise(
+    pop_bfs = sum(
+      as.numeric(immigration_of_the_permanent_resident_population),
+      na.rm = TRUE
     ),
-    error = function(e) {
-      message("BFS-API-Population fehlgeschlagen: ", conditionMessage(e))
-      NULL
-    }
-  )
-  if (!is.null(bfs_raw)) saveRDS(bfs_raw, bfs_pop_rds)
-}
+    .groups = "drop"
+  ) |>
+  transmute(
+    nationality = stringr::str_trim(citizenship),
+    year = as.integer(year),
+    pop_bfs = pop_bfs
+  ) |>
+  filter(!is.na(nationality), !is.na(year), !is.na(pop_bfs)) |>
 
-if (!is.null(bfs_raw) && nrow(bfs_raw) > 0) {
-  # mögliche Varianten für Spaltennamen
-  nat_cols <- c(
-    "staatsangehoerigkeit",
-    "staatsangehörigkeit",
-    "citizenship",
-    "nationality"
-  )
-  year_cols <- c("jahr", "year")
-  value_cols <- c(
-    "einwanderung_der_standigen_wohnbevolkerung",
-    "resident_population",
-    "population",
-    "value"
-  )
-  sex_cols <- c("geschlecht", "sex", "gender")
-  age_cols <- c("altersklasse", "ageclass", "age_class", "age")
-
-  present <- names(bfs_raw)
-  use_nat <- intersect(present, nat_cols)
-  use_year <- intersect(present, year_cols)
-  use_val <- intersect(present, value_cols)
-  use_sex <- intersect(present, sex_cols)
-  use_age <- intersect(present, age_cols)
-
-  bfs_clean <- as.data.frame(bfs_raw) %>%
-    dplyr::mutate(
-      nationality = dplyr::coalesce(!!!rlang::syms(use_nat)),
-      year = as.integer(dplyr::coalesce(!!!rlang::syms(use_year))),
-      value_raw = dplyr::coalesce(!!!rlang::syms(use_val))
-    ) %>%
-    dplyr::mutate(
-      sex_flag = if (length(use_sex) > 0) {
-        tolower(as.character(dplyr::coalesce(!!!rlang::syms(use_sex))))
-      } else {
-        NA_character_
-      },
-      age_flag = if (length(use_age) > 0) {
-        tolower(as.character(dplyr::coalesce(!!!rlang::syms(use_age))))
-      } else {
-        NA_character_
-      }
-    ) %>%
-    dplyr::filter(
-      !is.na(nationality),
-      !is.na(year),
-      !is.na(value_raw),
-      (is.na(sex_flag) |
-        sex_flag %in% c("0", "total", "all", "both", "both sexes")),
-      (is.na(age_flag) | age_flag %in% c("0", "total", "all", "all ages"))
-    ) %>%
-    dplyr::transmute(
-      nationality = stringr::str_trim(as.character(nationality)),
-      year = year,
-      pop_bfs = as.numeric(value_raw)
-    ) %>%
-    dplyr::filter(!is.na(pop_bfs), nationality != "")
-
-  # Join mit den Swiss-Immigration-Daten (falls vorhanden)
-  if (exists("swiss_immigration_data")) {
-    swiss_immigration_enhanced <- swiss_immigration_data %>%
-      dplyr::left_join(
-        bfs_clean %>%
-          dplyr::rename(origin_en = nationality, resident_population = pop_bfs),
-        by = c("origin_en", "year")
+  # Nur die Länder behalten, die bereits in den Schweizer Einwanderungsdaten enthalten sind
+  # Mit dem package stringi werden die Ländernamen (z.B. "Türkiye" -> "Turkiye") für den Vergleich normalisert.
+  mutate(
+    nationality_normalized = stringi::stri_trans_general(
+      nationality,
+      "latin-ascii"
+    )
+  ) |>
+  filter(
+    nationality_normalized %in%
+      stringi::stri_trans_general(
+        RAW_swiss_immigration$origin_en,
+        "latin-ascii"
       )
-  }
-} else {
-  bfs_clean <- NULL
-}
+  ) |>
+  select(-nationality_normalized)
 
+
+#Hier werden die bereinigten BFS-Daten mit den Schweizer Einwanderungsdaten zusammengeführt, um einen Datensatz zu erstellen,
+# der die Nettozuwanderung pro Herkunftsland und Jahr enthält.
+MERGED_swiss_immigration <- RAW_swiss_immigration |>
+  dplyr::mutate(
+    year = as.integer(year),
+    origin_en = stringr::str_trim(origin_en)
+  ) |>
+  dplyr::left_join(
+    bfs_clean |>
+      dplyr::rename(
+        origin_en = nationality
+      ) |>
+      dplyr::select(-pop_bfs),
+    by = c("origin_en", "year")
+  )
+
+
+# ============================================================
+# KAPITEL 4 — BFS-DATEN Visualisieren
+# ============================================================
 
 # --- 2) BFS: Kantonsdaten für Karte laden und bereinigen
 # Lade lokalen Cache oder frage API gezielt für latest_year_canton; bereinige mit dplyr.
@@ -433,7 +416,7 @@ if (!is.null(bfs_canton_raw) && nrow(bfs_canton_raw) > 0) {
 }
 
 # --- Ergebnisobjekte dieses Kapitels (für weitere Kapitel):
-# bfs_clean, swiss_immigration_enhanced, bfs_canton_clean, bfs_canton_map_data, swiss_canton_map_data
+# bfs_clean, swiss_immigration_merged, bfs_canton_clean, bfs_canton_map_data, swiss_canton_map_data
 
 # ============================================================
 # KAPITEL 6 — REGRESSIONSMODELLE UND ROBUSTHEITSPRÜFUNGEN
