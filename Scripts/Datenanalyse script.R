@@ -1,3 +1,7 @@
+# ============================================================
+# KAPITEL 1 — SETUP UND PAKETE
+# ============================================================
+
 # Benötigte Pakete laden
 required_packages <- c(
   "readr",
@@ -10,17 +14,9 @@ required_packages <- c(
   "countrycode",
   "huxtable",
   "scales",
-  "tidyr",
   "data.table",
-  "foreign",
-  "boot",
   "sf",
-  "tibble",
-  "tmap",
-  "mapview",
-  "leaflet",
-  "gridExtra",
-  "cowplot"
+  "tibble"
 )
 
 missing_packages <- setdiff(required_packages, rownames(installed.packages()))
@@ -30,41 +26,31 @@ if (length(missing_packages) > 0) {
 
 invisible(lapply(required_packages, library, character.only = TRUE))
 
-# Arbeitsverzeichnisse anlegen
-paths <- c("data/raw", "data/processed", "tables", "figures")
+# Arbeitsverzeichnisse definieren
+paths <- c("data", "tables", "figures")
 invisible(lapply(paths, function(path) {
   if (!dir.exists(path)) {
     dir.create(path, recursive = TRUE)
   }
 }))
 
-# Nur die für die Studie benötigten World-Bank-Indikatoren behalten
-indicator_list_df <- tibble::tibble(
-  Code = c(
-    "NY.GDP.MKTP.KD.ZG",
-    "SL.EMP.TOTL.SP.ZS",
-    "SL.UEM.TOTL.ZS"
-  ),
-  Description = c(
-    "BIP-Wachstum (jährlich in %)",
-    "Beschäftigungsquote, 15+, insgesamt (modellierte ILO-Schätzung)",
-    "Arbeitslosigkeit, insgesamt (% der Erwerbsbevölkerung) (modellierte ILO-Schätzung)"
-  )
-)
-
-utils::write.csv(
-  indicator_list_df,
-  file = "tables/indicator_list.csv",
-  row.names = FALSE
-)
-indicators <- indicator_list_df$Code
-
 # ============================================================
-# KAPITEL 2 — SCHWEIZER ZUWANDERUNGSDATEN
+# KAPITEL 2 — Daten Importieren und Aufbereiten
 # ============================================================
 
+# ============================================================
+# KAPITEL 2A —  Schweizerische Einwanderungsdaten importieren und aufbereiten.
+# ============================================================
+#Bei der Swiss Immigration Dataien handelt es sich um auf die BFS Webseite manuell heruntergeladene CSV Datei.
+
+#Hier wird das Immigration Data importiert, die Spalten werden in die richtigen Formate umgewandelt, und es werden nur die relevanten Herkunftsländer und Zeilen behalten.
+# Danach wird die Daten nach Herkunftsland und Jahr sortiert. Nur die relevanten Variablen (origin_en, year, net_migration) werden behalten.
+#Auch werden die Zeilen mit aggregierten Regionen (z.B. "Afrique", "Amérique", "Asie", "Océanie") sowie die Zeilen mit nicht-informativem Text
+# (z.B. "Renseignements|Source|© OFS") herausgefiltert.
+
+# Immigrationsdaten einlesen, bereinigen und filtern
 swiss_immigration_data <- readr::read_csv(
-  "data/processed/swiss_immigration_countries_year.csv",
+  "data/swiss_immigration_countries_year.csv",
   show_col_types = FALSE
 ) |>
   dplyr::mutate(
@@ -87,235 +73,156 @@ swiss_immigration_data <- readr::read_csv(
   dplyr::select(origin_en, year, net_migration) |>
   dplyr::arrange(origin_en, year)
 
-swiss_row_count <- nrow(swiss_immigration_data)
-swiss_origins <- sort(unique(swiss_immigration_data$origin_en))
-swiss_year_range <- range(swiss_immigration_data$year, na.rm = TRUE)
-swiss_missingness <- swiss_immigration_data |>
-  dplyr::summarize(dplyr::across(everything(), ~ sum(is.na(.x))))
-swiss_counts_by_origin <- swiss_immigration_data |>
-  dplyr::count(origin_en, sort = TRUE)
-
+# Jetzt werden die Daten auf Jahresbasis aggregiert, um die Nettozuwanderung pro Jahr zu erhalten.
+# Zusätzlich werden die durchschnittliche Nettozuwanderung und die Anzahl der Herkunftsländer pro Jahr berechnet.
 swiss_immigration_yearly_data <- swiss_immigration_data |>
   dplyr::group_by(year) |>
   dplyr::summarize(
     net_migration = sum(net_migration, na.rm = TRUE),
-    .groups = "drop"
-  ) |>
-  dplyr::arrange(year)
-
-swiss_yearly_row_count <- nrow(swiss_immigration_yearly_data)
-swiss_yearly_year_range <- range(
-  swiss_immigration_yearly_data$year,
-  na.rm = TRUE
-)
-swiss_yearly_missingness <- swiss_immigration_yearly_data |>
-  dplyr::summarize(dplyr::across(everything(), ~ sum(is.na(.x))))
-
-mean_by_year <- swiss_immigration_data |>
-  dplyr::group_by(year) |>
-  dplyr::summarize(
     mean_net_migration = mean(net_migration, na.rm = TRUE),
-    sd_net_migration = sd(net_migration, na.rm = TRUE),
     n_origins = dplyr::n(),
     .groups = "drop"
   ) |>
   dplyr::arrange(year)
 
-# Die durchschnittliche Nettozuwanderung pro Herkunftsland schwankt im Zeitverlauf stark.
+summary(swiss_immigration_yearly_data$net_migration)
+#Summary zeigt uns, dass wir teilweise Auswanderungen haben. Das Minimum von -10589
+# zeigt, dass es Jahre gab, in denen die Schweiz insgesamt
+# mehr Auswanderungen als Einwanderungen verzeichnete (negative Nettozuwanderung).
+# Der Median (26290) liegt deutlich unter dem Mittelwert (27759), was auf
+# einzelne Jahre mit hoher Zuwanderung hindeutet.
+
+# Die deskriptive Analyse umfasst 15 europäische Herkunftsländer.
+# Für die Regressionsanalyse werden die Daten auf Jahresbasis aggregiert.
 
 # ============================================================
-# KAPITEL 3 — WORLD-BANK-DATEN FÜR DIE SCHWEIZ
+# KAPITEL 2B —  World Bank Indikatoren importieren und aufbereiten.
 # ============================================================
 
-if (!file.exists("data/raw/world_bank_raw.rds")) {
-  world_bank_raw_data <- WDI::WDI(
+# Hier importiere ich die Indikatoren der World Bank, die ich für die Analyse verwenden möchte. Mit meiner Masterarbeit arbeite
+#ich so, indem ich zuerst die Indikator definiere dich ich brauch, und danach den API call sende.
+# Bei World Bank Indikatoren handelt es sich um unsere Unabhängige Variable (BIP-Wachstum) und eine Kontrollvariable (Arbeitslosenquote).
+# Die Abhänige Variable ist die Nettozuwanderung, die wir bereits vorher importiert und aufbereitet haben.
+indicator_list_df <- tibble::tibble(
+  Code = c(
+    "NY.GDP.MKTP.KD.ZG",
+    "SL.UEM.TOTL.ZS"
+  ),
+
+  #Und hier was für Konkrete Indikatoren es sind.
+  Description = c(
+    "BIP-Wachstum (jährlich in %)",
+    "Arbeitslosigkeit, insgesamt (% der Erwerbsbevölkerung) (modellierte ILO-Schätzung)"
+  )
+)
+
+#Die Indikatoren als Referenz Liste speichern.
+indicators <- indicator_list_df$Code
+
+#Jetzt die World Bank Indikatoren Mithilfe APi importieren.
+# Das Skript prüft zuerst, ob die Datei bereits existiert. Wenn ja, wird sie geladen. Wenn nein, wird der API-Aufruf durchgeführt.
+# Zusätzlich prüft das Skript, ob alle benötigten Indikatoren in der vorhandenen Datei enthalten sind.
+# Wenn nicht, wird die Datei erneut mit den fehlenden Indikatoren aktualisiert.
+
+# Definiere den Dateipfad
+world_bank_file <- "data/world_bank_raw.rds"
+
+# Definiere den Zeitrahmen (min/max Jahr der Schweizer Einwanderungsdaten). Somit werden nur die Jahre abgefragt, für die wir auch Einwanderungsdaten haben.
+# Das spart Zeit und API-Aufrufe.
+start_year <- min(swiss_immigration_yearly_data$year, na.rm = TRUE)
+end_year <- max(swiss_immigration_yearly_data$year, na.rm = TRUE)
+
+# Funktion zum Laden der Daten via API
+fetch_world_bank_data <- function() {
+  WDI::WDI(
     country = "CHE",
     indicator = indicators,
-    start = min(swiss_immigration_yearly_data$year, na.rm = TRUE),
-    end = max(swiss_immigration_yearly_data$year, na.rm = TRUE),
+    start = start_year,
+    end = end_year,
     extra = TRUE
   )
-  saveRDS(world_bank_raw_data, "data/raw/world_bank_raw.rds")
-} else {
-  temp_check <- readRDS("data/raw/world_bank_raw.rds")
-  missing_in_file <- setdiff(indicators, names(temp_check))
-  if (length(missing_in_file) > 0) {
-    world_bank_raw_data <- WDI::WDI(
-      country = "CHE",
-      indicator = indicators,
-      start = min(swiss_immigration_yearly_data$year, na.rm = TRUE),
-      end = max(swiss_immigration_yearly_data$year, na.rm = TRUE),
-      extra = TRUE
-    )
-    saveRDS(world_bank_raw_data, "data/raw/world_bank_raw.rds")
-  } else {
-    world_bank_raw_data <- temp_check
-  }
-  rm(list = intersect(c("temp_check", "missing_in_file"), ls()))
 }
 
+# Lade oder aktualisiere die Daten
+if (!file.exists(world_bank_file)) {
+  # Datei existiert nicht → API-Aufruf
+  world_bank_raw_data <- fetch_world_bank_data()
+  saveRDS(world_bank_raw_data, world_bank_file)
+} else {
+  # Datei existiert → Prüfe auf fehlende Indikatoren
+  temp_check <- readRDS(world_bank_file)
+  missing_in_file <- setdiff(indicators, names(temp_check))
+
+  if (length(missing_in_file) > 0) {
+    # Fehlende Indikatoren → API-Aufruf und Überschreiben
+    world_bank_raw_data <- fetch_world_bank_data()
+    saveRDS(world_bank_raw_data, world_bank_file)
+  } else {
+    # Alle Indikatoren vorhanden → Verwende die Datei
+    world_bank_raw_data <- temp_check
+  }
+  # Bereinige temporäre Variablen
+  rm(temp_check, missing_in_file)
+}
+
+names(world_bank_raw_data)
+
+# Für die Analyse benötige ich nur die Spalten year, gdp_growth, employment_ratio und unemployment_total. Alle anderen Spalten werden entfernt.
+# - NY.GDP.MKTP.KD.ZG (gdp_growth): Unabhängige Variable
+# - SL.UEM.TOTL.ZS (unemployment_total): Kontrollvariable 1
+
+# --- Jetzt verarbeite ich die World Bank Daten, um sie für die Analyse vorzubereiten. ---
+# 1. Wähle Spalten: country, iso3c, year + alle Indikatoren
+# 3. Benenne Indikatoren um:
+#    - NY.GDP.MKTP.KD.ZG → gdp_growth (BIP-Wachstum)
+#    - SL.UEM.TOTL.ZS → unemployment_total (Arbeitslosenquote)
+# 4. Sortiere nach Jahr
 swiss_world_bank_data <- world_bank_raw_data |>
-  dplyr::filter(iso3c == "CHE") |>
-  dplyr::select(country, iso3c, year, dplyr::all_of(indicators)) |>
+  dplyr::select(year, dplyr::all_of(indicators)) |>
   dplyr::rename(
-    gdp_growth = NY.GDP.MKTP.KD.ZG,
-    employment_ratio = SL.EMP.TOTL.SP.ZS,
-    unemployment_total = SL.UEM.TOTL.ZS
+    bip_wachstum = NY.GDP.MKTP.KD.ZG,
+    arbeitslosenquote = SL.UEM.TOTL.ZS
   ) |>
   dplyr::arrange(year)
 
 # ============================================================
-# KAPITEL 4 — ZUSAMMENGEFÜHRTE ANALYSEDATEN
+# KAPITEL 2C — ZUSAMMENGEFÜHRTE ANALYSEDATEN
 # ============================================================
+
+#Jetzt werden die aufbereiteten Einwanderungsdaten mit den World Bank Indikatoren zusammengeführt,
+# um einen Datensatz zu erstellen, der alle benötigten Variablen für die Analyse enthält.
 
 swiss_analysis_data <- swiss_immigration_yearly_data |>
   dplyr::left_join(
-    swiss_world_bank_data |>
-      dplyr::select(year, gdp_growth, employment_ratio, unemployment_total),
+    swiss_world_bank_data,
     by = "year"
   ) |>
   dplyr::arrange(year)
 
-swiss_analysis_row_count <- nrow(swiss_analysis_data)
-swiss_analysis_year_range <- range(swiss_analysis_data$year, na.rm = TRUE)
-swiss_analysis_missingness <- swiss_analysis_data |>
-  dplyr::summarize(dplyr::across(everything(), ~ sum(is.na(.x))))
+cat("NA counts per variable:\n")
+print(colSums(is.na(swiss_analysis_data)))
 
+#Wir haben keine NA, was eine gute Nachricht ist.
 # ============================================================
-# KAPITEL 5 — BFS-DATEN AUFBEREITEN
+# KAPITEL 3 — BFS-DATEN AUFBEREITEN
 # ============================================================
 
-bfs_rds <- "data/raw/bfs_raw.rds"
+# --- Meta: Ziel dieses Kapitels
+# Lade und bereinige BFS-Populations- und Kantonsdaten.
+# Erzeuge saubere Tabellen (bfs_clean, bfs_canton_map_data) und
+# erweitere die Swiss-Immigration-Daten mit resident_population.
+
+# Konfiguration: Dataset-ID und lokale Pfade
 bfs_dataset_id <- "px-x-0103020200_102"
+bfs_pop_rds <- "data/raw/bfs_population_immigration.rds"
 bfs_canton_rds <- "data/raw/bfs_canton_immigration_2024.rds"
 latest_year_canton <- 2024
 
-standardize_bfs_dt <- function(data) {
-  dt <- data.table::as.data.table(data)
-  data.table::setnames(dt, names(dt), tolower(names(dt)))
-  dt
-}
 
-first_existing_column <- function(candidates, names_vec) {
-  hit <- intersect(candidates, names_vec)
-  if (length(hit) == 0) {
-    NA_character_
-  } else {
-    hit[[1]]
-  }
-}
-
-keep_total_rows <- function(dt) {
-  sex_col <- first_existing_column(c("geschlecht", "sex", "gender"), names(dt))
-  age_col <- first_existing_column(
-    c("altersklasse", "ageclass", "age_class", "age"),
-    names(dt)
-  )
-
-  if (!is.na(sex_col)) {
-    dt <- dt[
-      tolower(as.character(get(sex_col))) %in%
-        c("0", "total", "all", "both", "both sexes")
-    ]
-  }
-  if (!is.na(age_col)) {
-    dt <- dt[
-      tolower(as.character(get(age_col))) %in%
-        c("0", "total", "all", "all ages")
-    ]
-  }
-  dt
-}
-
-clean_bfs_population <- function(data) {
-  dt <- keep_total_rows(standardize_bfs_dt(data))
-
-  year_col <- first_existing_column(c("jahr", "year"), names(dt))
-  nationality_col <- first_existing_column(
-    c(
-      "staatsangehoerigkeit",
-      "staatsangehörigkeit",
-      "citizenship",
-      "nationality"
-    ),
-    names(dt)
-  )
-  value_col <- first_existing_column(
-    c(
-      "einwanderung_der_standigen_wohnbevolkerung",
-      "resident_population",
-      "population",
-      "value"
-    ),
-    names(dt)
-  )
-
-  if (is.na(year_col) || is.na(nationality_col) || is.na(value_col)) {
-    return(data.table::data.table())
-  }
-
-  out <- dt[, .(
-    nationality = stringr::str_trim(as.character(get(nationality_col))),
-    year = as.integer(get(year_col)),
-    pop_bfs = as.numeric(get(value_col))
-  )]
-
-  out <- out[!is.na(pop_bfs) & !is.na(nationality) & nationality != ""]
-  out
-}
-
-clean_bfs_canton <- function(data) {
-  dt <- keep_total_rows(standardize_bfs_dt(data))
-
-  canton_col <- first_existing_column(c("kanton", "canton"), names(dt))
-  nationality_col <- first_existing_column(
-    c(
-      "staatsangehoerigkeit",
-      "staatsangehörigkeit",
-      "citizenship",
-      "nationality"
-    ),
-    names(dt)
-  )
-  year_col <- first_existing_column(c("jahr", "year"), names(dt))
-  value_col <- first_existing_column(
-    c(
-      "einwanderung_der_standigen_wohnbevolkerung",
-      "immigration_from_abroad",
-      "value"
-    ),
-    names(dt)
-  )
-
-  if (
-    is.na(canton_col) ||
-      is.na(nationality_col) ||
-      is.na(year_col) ||
-      is.na(value_col)
-  ) {
-    return(data.table::data.table())
-  }
-
-  out <- dt[, .(
-    canton = stringr::str_trim(as.character(get(canton_col))),
-    nationality = stringr::str_trim(as.character(get(nationality_col))),
-    year = as.integer(get(year_col)),
-    immigration_from_abroad = as.numeric(get(value_col))
-  )]
-
-  out <- out[
-    !is.na(canton) &
-      canton != "" &
-      !is.na(nationality) &
-      nationality != "" &
-      canton != "Schweiz" &
-      nationality != "Schweiz"
-  ]
-  out
-}
-
-if (file.exists(bfs_rds)) {
-  bfs_raw <- readRDS(bfs_rds)
+# --- 1) BFS: Population (Nationalität x Jahr) laden und bereinigen
+# Prüfe lokalen Cache, sonst API-Aufruf; konvertiere Spalten mithilfe von dplyr.
+if (file.exists(bfs_pop_rds)) {
+  bfs_raw <- readRDS(bfs_pop_rds)
 } else {
   bfs_raw <- tryCatch(
     BFS::bfs_get_data(
@@ -324,52 +231,105 @@ if (file.exists(bfs_rds)) {
       clean_names = TRUE
     ),
     error = function(e) {
-      message("BFS-API-Aufruf fehlgeschlagen: ", conditionMessage(e))
+      message("BFS-API-Population fehlgeschlagen: ", conditionMessage(e))
       NULL
     }
   )
-  if (!is.null(bfs_raw)) {
-    saveRDS(bfs_raw, bfs_rds)
-  }
+  if (!is.null(bfs_raw)) saveRDS(bfs_raw, bfs_pop_rds)
 }
 
-if (!is.null(bfs_raw)) {
-  bfs_clean <- clean_bfs_population(bfs_raw)
-  if (nrow(bfs_clean) > 0) {
-    bfs_clean <- data.table::as.data.table(bfs_clean)
-    data.table::setorder(bfs_clean, nationality, year)
+if (!is.null(bfs_raw) && nrow(bfs_raw) > 0) {
+  # mögliche Varianten für Spaltennamen
+  nat_cols <- c(
+    "staatsangehoerigkeit",
+    "staatsangehörigkeit",
+    "citizenship",
+    "nationality"
+  )
+  year_cols <- c("jahr", "year")
+  value_cols <- c(
+    "einwanderung_der_standigen_wohnbevolkerung",
+    "resident_population",
+    "population",
+    "value"
+  )
+  sex_cols <- c("geschlecht", "sex", "gender")
+  age_cols <- c("altersklasse", "ageclass", "age_class", "age")
 
-    swiss_immigration_enhanced <- swiss_immigration_data |>
+  present <- names(bfs_raw)
+  use_nat <- intersect(present, nat_cols)
+  use_year <- intersect(present, year_cols)
+  use_val <- intersect(present, value_cols)
+  use_sex <- intersect(present, sex_cols)
+  use_age <- intersect(present, age_cols)
+
+  bfs_clean <- as.data.frame(bfs_raw) %>%
+    dplyr::mutate(
+      nationality = dplyr::coalesce(!!!rlang::syms(use_nat)),
+      year = as.integer(dplyr::coalesce(!!!rlang::syms(use_year))),
+      value_raw = dplyr::coalesce(!!!rlang::syms(use_val))
+    ) %>%
+    dplyr::mutate(
+      sex_flag = if (length(use_sex) > 0) {
+        tolower(as.character(dplyr::coalesce(!!!rlang::syms(use_sex))))
+      } else {
+        NA_character_
+      },
+      age_flag = if (length(use_age) > 0) {
+        tolower(as.character(dplyr::coalesce(!!!rlang::syms(use_age))))
+      } else {
+        NA_character_
+      }
+    ) %>%
+    dplyr::filter(
+      !is.na(nationality),
+      !is.na(year),
+      !is.na(value_raw),
+      (is.na(sex_flag) |
+        sex_flag %in% c("0", "total", "all", "both", "both sexes")),
+      (is.na(age_flag) | age_flag %in% c("0", "total", "all", "all ages"))
+    ) %>%
+    dplyr::transmute(
+      nationality = stringr::str_trim(as.character(nationality)),
+      year = year,
+      pop_bfs = as.numeric(value_raw)
+    ) %>%
+    dplyr::filter(!is.na(pop_bfs), nationality != "")
+
+  # Join mit den Swiss-Immigration-Daten (falls vorhanden)
+  if (exists("swiss_immigration_data")) {
+    swiss_immigration_enhanced <- swiss_immigration_data %>%
       dplyr::left_join(
-        as.data.frame(bfs_clean) |>
-          dplyr::select(
-            origin_en = nationality,
-            year,
-            resident_population = pop_bfs
-          ),
+        bfs_clean %>%
+          dplyr::rename(origin_en = nationality, resident_population = pop_bfs),
         by = c("origin_en", "year")
       )
-  } else {
-    bfs_clean <- NULL
   }
+} else {
+  bfs_clean <- NULL
 }
 
+
+# --- 2) BFS: Kantonsdaten für Karte laden und bereinigen
+# Lade lokalen Cache oder frage API gezielt für latest_year_canton; bereinige mit dplyr.
 if (file.exists(bfs_canton_rds)) {
   bfs_canton_raw <- readRDS(bfs_canton_rds)
 } else {
-  meta_canton <- BFS::bfs_get_metadata(
-    number_bfs = bfs_dataset_id,
-    language = "de"
+  meta_canton <- tryCatch(
+    BFS::bfs_get_metadata(number_bfs = bfs_dataset_id, language = "de"),
+    error = function(e) NULL
   )
-  canton_values <- if (!is.null(meta_canton$values[[2]])) {
-    meta_canton$values[[2]][2:27]
-  } else {
-    NULL
-  }
-  nationality_values <- if (!is.null(meta_canton$values[[3]])) {
-    meta_canton$values[[3]][-1]
-  } else {
-    NULL
+
+  canton_values <- NULL
+  nationality_values <- NULL
+  if (!is.null(meta_canton) && !is.null(meta_canton$values)) {
+    if (length(meta_canton$values) >= 2) {
+      canton_values <- meta_canton$values[[2]][-1] %||% meta_canton$values[[2]]
+    }
+    if (length(meta_canton$values) >= 3) {
+      nationality_values <- meta_canton$values[[3]][-1] %||%
+        meta_canton$values[[3]]
+    }
   }
 
   bfs_canton_raw <- tryCatch(
@@ -378,92 +338,106 @@ if (file.exists(bfs_canton_rds)) {
       language = "de",
       query = list(
         Jahr = as.character(latest_year_canton),
-        Kanton = canton_values,
-        Staatsangehörigkeit = nationality_values,
+        Kanton = if (!is.null(canton_values)) canton_values else NULL,
+        Staatsangehörigkeit = if (!is.null(nationality_values)) {
+          nationality_values
+        } else {
+          NULL
+        },
         Geschlecht = "0",
         Altersklasse = "0"
       ),
       clean_names = TRUE
     ),
     error = function(e) {
-      message("BFS-Kantonsabruf fehlgeschlagen: ", conditionMessage(e))
+      message("BFS-API-Kanton fehlgeschlagen: ", conditionMessage(e))
       NULL
     }
   )
-  if (!is.null(bfs_canton_raw)) {
-    saveRDS(bfs_canton_raw, bfs_canton_rds)
-  }
+  if (!is.null(bfs_canton_raw)) saveRDS(bfs_canton_raw, bfs_canton_rds)
 }
 
-if (!is.null(bfs_canton_raw)) {
-  bfs_canton_clean <- clean_bfs_canton(bfs_canton_raw)
-  if (nrow(bfs_canton_clean) > 0) {
-    bfs_canton_clean <- data.table::as.data.table(bfs_canton_clean)
-    data.table::setorder(bfs_canton_clean, canton, nationality, year)
+if (!is.null(bfs_canton_raw) && nrow(bfs_canton_raw) > 0) {
+  canton_cols <- c("kanton", "canton", "kanton_name")
+  nat_cols2 <- c(
+    "staatsangehoerigkeit",
+    "staatsangehörigkeit",
+    "citizenship",
+    "nationality"
+  )
+  year_cols2 <- c("jahr", "year")
+  val_cols2 <- c(
+    "einwanderung_der_standigen_wohnbevolkerung",
+    "immigration_from_abroad",
+    "value"
+  )
 
-    bfs_canton_map_data <- bfs_canton_clean[
-      year == latest_year_canton,
-      .(
-        immigration_from_abroad = sum(immigration_from_abroad, na.rm = TRUE)
-      ),
-      by = .(canton)
-    ][,
-      canton_name := data.table::fcase(
-        canton == "Bern / Berne"                     , "Bern"       ,
-        canton == "Fribourg / Freiburg"              , "Fribourg"   ,
-        canton == "Graubünden / Grigioni / Grischun" , "Graubünden" ,
-        canton == "Valais / Wallis"                  , "Valais"     ,
-        default = canton
-      )
-    ]
+  present2 <- names(bfs_canton_raw)
+  use_canton <- intersect(present2, canton_cols)
+  use_nat2 <- intersect(present2, nat_cols2)
+  use_year2 <- intersect(present2, year_cols2)
+  use_val2 <- intersect(present2, val_cols2)
 
-    swiss_canton_map_data <- BFS::bfs_get_base_maps(
-      geom = "kant",
-      return_sf = TRUE
-    ) |>
-      dplyr::left_join(
-        as.data.frame(bfs_canton_map_data) |>
-          dplyr::select(canton_name, immigration_from_abroad),
-        by = c("name" = "canton_name")
-      )
+  bfs_canton_clean <- as.data.frame(bfs_canton_raw) %>%
+    dplyr::mutate(
+      canton = dplyr::coalesce(!!!rlang::syms(use_canton)),
+      nationality = dplyr::coalesce(!!!rlang::syms(use_nat2)),
+      year = as.integer(dplyr::coalesce(!!!rlang::syms(use_year2))),
+      immigration_from_abroad = as.numeric(dplyr::coalesce(
+        !!!rlang::syms(use_val2)
+      ))
+    ) %>%
+    dplyr::filter(
+      !is.na(canton),
+      canton != "Schweiz",
+      !is.na(nationality),
+      nationality != "Schweiz",
+      !is.na(year)
+    ) %>%
+    dplyr::mutate(
+      canton = stringr::str_trim(as.character(canton)),
+      nationality = stringr::str_trim(as.character(nationality))
+    )
 
-    swiss_canton_immigration_map <- ggplot2::ggplot(swiss_canton_map_data) +
-      ggplot2::geom_sf(
-        ggplot2::aes(fill = immigration_from_abroad),
-        color = "white",
-        linewidth = 0.2
-      ) +
-      ggplot2::scale_fill_gradient(
-        low = "#deebf7",
-        high = "#08519c",
-        na.value = "grey90",
-        labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
-      ) +
-      ggplot2::labs(
-        title = paste(
-          "Immigration aus dem Ausland nach Kanton",
-          latest_year_canton
-        ),
-        fill = "Immigration"
-      ) +
-      ggplot2::theme_minimal() +
-      ggplot2::theme(
-        plot.title = ggplot2::element_text(face = "bold", size = 14),
-        axis.text = ggplot2::element_blank(),
-        axis.title = ggplot2::element_blank(),
-        axis.ticks = ggplot2::element_blank(),
-        panel.grid = ggplot2::element_blank()
+  bfs_canton_map_data <- bfs_canton_clean %>%
+    dplyr::filter(year == latest_year_canton) %>%
+    dplyr::group_by(canton) %>%
+    dplyr::summarize(
+      immigration_from_abroad = sum(immigration_from_abroad, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(
+      canton_name = dplyr::case_when(
+        canton == "Bern / Berne" ~ "Bern",
+        canton == "Fribourg / Freiburg" ~ "Fribourg",
+        canton == "Graubünden / Grigioni / Grischun" ~ "Graubünden",
+        canton == "Valais / Wallis" ~ "Valais",
+        TRUE ~ canton
       )
-  } else {
-    bfs_canton_clean <- NULL
-    bfs_canton_map_data <- NULL
-  }
+    )
+
+  # Basis-Shape der Kantone laden und für spätere Visualisierung joinen (keine ggplot-Erzeugung hier)
+  swiss_canton_map_data <- BFS::bfs_get_base_maps(
+    geom = "kant",
+    return_sf = TRUE
+  ) %>%
+    dplyr::left_join(
+      bfs_canton_map_data %>%
+        dplyr::select(canton_name, immigration_from_abroad),
+      by = c("name" = "canton_name")
+    )
+} else {
+  bfs_canton_clean <- NULL
+  bfs_canton_map_data <- NULL
+  swiss_canton_map_data <- NULL
 }
+
+# --- Ergebnisobjekte dieses Kapitels (für weitere Kapitel):
+# bfs_clean, swiss_immigration_enhanced, bfs_canton_clean, bfs_canton_map_data, swiss_canton_map_data
 
 # ============================================================
 # KAPITEL 6 — REGRESSIONSMODELLE UND ROBUSTHEITSPRÜFUNGEN
 # ============================================================
-
 swiss_regression_data <- swiss_analysis_data |>
   dplyr::filter(
     !is.na(net_migration),
@@ -1054,90 +1028,3 @@ if (exists("swiss_canton_immigration_map")) {
 invisible(lapply(plot_exports, function(item) {
   do.call(export_png, item)
 }))
-
-# ============================================================
-# KAPITEL 9 — OBJEKTORGANISATION UND EXPORT
-# ============================================================
-
-countries_df <- swiss_immigration_data |>
-  dplyr::group_by(origin_en) |>
-  dplyr::summarize(
-    total_net = sum(net_migration, na.rm = TRUE),
-    .groups = "drop"
-  ) |>
-  dplyr::mutate(
-    iso3 = dplyr::case_when(
-      origin_en == "Kosovo" ~ "XKX",
-      TRUE ~ countrycode::countrycode(origin_en, "country.name", "iso3c")
-    )
-  ) |>
-  dplyr::arrange(dplyr::desc(total_net))
-
-get_if_exists <- function(name) {
-  if (exists(name, inherits = FALSE)) get(name) else NULL
-}
-
-imported_data_list <- list(
-  swiss_immigration_data = get_if_exists("swiss_immigration_data"),
-  swiss_immigration_yearly_data = get_if_exists(
-    "swiss_immigration_yearly_data"
-  ),
-  swiss_world_bank_data = get_if_exists("swiss_world_bank_data"),
-  swiss_analysis_data = get_if_exists("swiss_analysis_data"),
-  swiss_immigration_enhanced = get_if_exists("swiss_immigration_enhanced"),
-  bfs_raw = get_if_exists("bfs_raw"),
-  bfs_clean = get_if_exists("bfs_clean"),
-  bfs_canton_raw = get_if_exists("bfs_canton_raw"),
-  bfs_canton_clean = get_if_exists("bfs_canton_clean"),
-  world_bank_raw_data = get_if_exists("world_bank_raw_data")
-)
-imported_data_list <- imported_data_list[
-  !vapply(imported_data_list, is.null, logical(1))
-]
-
-plots_list <- list(
-  swiss_migration_over_time = get_if_exists("swiss_migration_over_time"),
-  swiss_migration_by_country = get_if_exists("swiss_migration_by_country"),
-  pie_total_net = get_if_exists("pie_total_net"),
-  swiss_migration_world_map = get_if_exists("swiss_migration_world_map"),
-  swiss_canton_immigration_map = get_if_exists("swiss_canton_immigration_map"),
-  scatter_gdp_migration = get_if_exists("scatter_gdp_migration"),
-  hist_net_migration = get_if_exists("hist_net_migration"),
-  boxplot_net_migration_quartiles = get_if_exists(
-    "boxplot_net_migration_quartiles"
-  )
-)
-plots_list <- plots_list[!vapply(plots_list, is.null, logical(1))]
-
-model_list <- list(
-  swiss_migration_model = get_if_exists("swiss_migration_model"),
-  swiss_migration_model_controlled = get_if_exists(
-    "swiss_migration_model_controlled"
-  ),
-  swiss_rolling_regression_models = get_if_exists(
-    "swiss_rolling_regression_models"
-  )
-)
-model_list <- model_list[!vapply(model_list, is.null, logical(1))]
-
-table_list <- list(
-  swiss_regression_table = get_if_exists("swiss_regression_table"),
-  countries_df = get_if_exists("countries_df"),
-  t_test_summary_table = get_if_exists("t_test_summary_table"),
-  rolling_regression_results = get_if_exists("rolling_regression_results"),
-  mean_by_year = get_if_exists("mean_by_year")
-)
-table_list <- table_list[!vapply(table_list, is.null, logical(1))]
-
-session_objects <- list(
-  imported_data = imported_data_list,
-  plots = plots_list,
-  models = model_list,
-  tables = table_list
-)
-
-saveRDS(session_objects, file = "data/processed/session_objects.rds")
-
-message(
-  "Objekte wurden in Listen zusammengefasst und nach data/processed/session_objects.rds gespeichert."
-)
