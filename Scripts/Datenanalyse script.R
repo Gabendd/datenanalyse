@@ -17,8 +17,11 @@ required_packages <- c(
   "scales",
   "data.table",
   "sf",
-  "tibble"
+  "tibble",
+  "rnaturalearthdata",
+  "sf"
 )
+
 
 missing_packages <- setdiff(required_packages, rownames(installed.packages()))
 if (length(missing_packages) > 0) {
@@ -206,182 +209,89 @@ print(colSums(is.na(ANALYSIS_swiss)))
 #Wir haben keine NA, was eine gute Nachricht ist.
 
 # ============================================================
-# KAPITEL 3 — BFS-DATEN
+# KAPITEL 3 — WELTKARTE DER NETTOZUWANDERUNG
 # ============================================================
 
-# BFS-Datensatz zur Einwanderungsstatistik der Schweiz.
-# Dieser Datensatz enthält sowohl nationale als auch kantonale Informationen.
-bfs_dataset_id <- "px-x-0103020200_102"
+# Dieses Kapitel visualisiert die Nettozuwanderung in die Schweiz
+# nach Herkunftsland auf einer geografischen Weltkarte.
+# Fokus: ausschließlich die 15 im Datensatz enthaltenen Herkunftsländer.
 
-# Lokale Speicherpfade (Caching, damit API nicht jedes Mal aufgerufen wird)
-bfs_pop_rds <- "data/bfs_population_immigration.rds"
-bfs_canton_rds <- "data/bfs_canton_immigration.rds"
+#Zuerst müssen wir die Weltkarte laden, um die geometrischen Daten für die Länder zu erhalten.
+# Wir verwenden Natural Earth Daten als geometrische Basis für die Karte.
+world <- rnaturalearth::ne_countries(
+  scale = "medium",
+  returnclass = "sf"
+)
 
-
-# ------------------------------------------------------------
-# 2) NATIONALE BFS-DATEN LADEN
-# ------------------------------------------------------------
-
-# Ziel: Einwanderung nach Staatsangehörigkeit und Jahr
-
-# Prüfen ob Daten bereits lokal gespeichert sind
-# → wenn ja: direkt laden (spart API Zeit und verhindert Fehler)
-if (file.exists(bfs_pop_rds)) {
-  bfs_raw <- readRDS(bfs_pop_rds)
-} else {
-  # Falls keine lokale Version existiert:
-  # → Daten direkt von BFS API abrufen
-  bfs_raw <- BFS::bfs_get_data(
-    number_bfs = bfs_dataset_id,
-    language = "en",
-    clean_names = TRUE
-  )
-
-  # Danach speichern wir die Rohdaten lokal
-  saveRDS(bfs_raw, bfs_pop_rds)
-}
-
-# Struktur prüfen, um zu verstehen welche Variablen vorhanden sind
-str(bfs_raw)
-
-
-# ------------------------------------------------------------
-# 3) NATIONALE DATEN BEREINIGEN
-# ------------------------------------------------------------
-
-# Ziel:
-# - nur echte Länder (keine Gesamtzeilen)
-# - nur Jahr + Herkunft + Einwanderung
-# - Daten auf ein einheitliches Format bringen
-
-bfs_clean <- bfs_raw |>
-
-  # Entferne aggregierte Gesamtzeilen
-  # (diese enthalten keine einzelnen Nationalitäten)
-  filter(
-    !is.na(citizenship),
-    citizenship != "Citizenship - total"
-  ) |>
-
-  # Gruppierung notwendig, da BFS Daten teilweise mehrfach vorkommen
-  group_by(citizenship, year) |>
-
-  # Falls mehrere Teilwerte existieren → zusammenführen
+#Die Karte wird nur die 15 Herkunftsländer zeigen, die in unserem Datensatz enthalten sind.
+# Die Nettozuwanderung wird über den gesamten Zeitraum (1991–2024) pro Herkunftsland aufsummiert.
+map_data <- RAW_swiss_immigration |>
+  group_by(origin_en) |>
   summarise(
-    immigration_from_abroad = sum(
-      as.numeric(
-        immigration_of_the_permanent_resident_population
-      ),
-      na.rm = TRUE
-    ),
+    net_migration = sum(net_migration, na.rm = TRUE),
     .groups = "drop"
   ) |>
 
-  # Vereinheitlichung der Struktur für spätere Analysen
-  transmute(
-    nationality = stringr::str_trim(citizenship),
-    year = as.integer(year),
-    immigration_from_abroad
-  )
-
-
-# ------------------------------------------------------------
-# 4) KANTONALE BFS-DATEN LADEN
-# ------------------------------------------------------------
-
-# Ziel: Einwanderung nach Kanton (für spätere Karten)
-
-# Gleiche Logik wie bei nationalen Daten:
-# zuerst prüfen ob Cache existiert
-if (file.exists(bfs_canton_rds)) {
-  bfs_canton_raw <- readRDS(bfs_canton_rds)
-} else {
-  # API call für kantonale Daten
-  bfs_canton_raw <- BFS::bfs_get_data(
-    number_bfs = bfs_dataset_id,
-    language = "de",
-    clean_names = TRUE
-  )
-
-  # lokal speichern für zukünftige Nutzung
-  saveRDS(bfs_canton_raw, bfs_canton_rds)
-}
-
-
-# ------------------------------------------------------------
-# 5) KANTONALE DATEN BEREINIGEN
-# ------------------------------------------------------------
-
-# Ziel:
-# Jede Zeile = Kanton × Nationalität × Jahr
-
-bfs_canton_clean <- bfs_canton_raw |>
-
-  # Auswahl und Standardisierung der Variablen
-  transmute(
-    canton = kanton,
-    nationality = staatsangehoerigkeit,
-    year = as.integer(jahr),
-
-    # Hauptvariable: Einwanderung aus dem Ausland
-    immigration_from_abroad = as.numeric(
-      einwanderung_der_standigen_wohnbevolkerung
+  # Umwandlung in ISO3-Code für sauberes Matching mit der Weltkarte.
+  mutate(
+    iso_a3 = countrycode(
+      origin_en,
+      origin = "country.name",
+      destination = "iso3c"
     )
   ) |>
 
-  # Entferne ungültige Werte und aggregierte Kategorien
-  filter(
-    !is.na(canton),
-    canton != "Schweiz",
-    !is.na(nationality),
-    nationality != "Schweiz"
-  )
+  # Sicherheitsfilter:
+  # Nur Länder behalten, die erfolgreich in ISO3 umgewandelt wurden
+  filter(!is.na(iso_a3))
 
 
 # ------------------------------------------------------------
-# 6) DATEN FÜR KANTONSKARTE AUFBEREITEN
+# 3) Weltkarte mit Migrationsdaten verbinden
 # ------------------------------------------------------------
-
-# Für Visualisierung wird nur das aktuellste Jahr verwendet,
-# damit die Karte nicht mehrere Jahre gleichzeitig zeigt.
-
-latest_year_canton <- max(
-  bfs_canton_clean$year,
-  na.rm = TRUE
-)
-
-# Aggregation:
-# alle Nationalitäten werden pro Kanton zusammengezählt
-# → Ergebnis: Gesamt-Einwanderung pro Kanton
-bfs_canton_map_data <- bfs_canton_clean |>
-
-  filter(year == latest_year_canton) |>
-
-  group_by(canton) |>
-
-  summarise(
-    immigration_from_abroad = sum(
-      immigration_from_abroad,
-      na.rm = TRUE
-    ),
-    .groups = "drop"
-  )
-
-
-# ------------------------------------------------------------
-# 7) KANTONSKARTE ERSTELLEN
-# ------------------------------------------------------------
-
-# Hier werden die geografischen Kantonsgrenzen geladen
-# und mit den BFS Daten verbunden
-
-swiss_canton_map_data <- BFS::bfs_get_base_maps(
-  geom = "kant",
-  return_sf = TRUE
-) |>
-
-  # Verknüpfung der Geometrie mit den Einwanderungsdaten
+# Hier werden Geodaten (world) mit den Migrationsdaten verknüpft.
+# Nur Länder mit Matching ISO-Code erhalten Werte.
+# Wir verwenden iso_a3_eh statt iso_a3, da einige Länder (z.B. Frankreich) in iso_a3 den Wert "-99" haben.
+world_map <- world |>
+  dplyr::select(-iso_a3) |>
+  dplyr::rename(iso_a3 = iso_a3_eh) |>
   left_join(
-    bfs_canton_map_data,
-    by = c("name" = "canton")
+    map_data,
+    by = "iso_a3"
   )
+
+#Jetzt können wir die Karte visualisieren.
+# Zeichnet die Ländergrenzen und füllt jedes Land mit der entsprechenden Farbe basierend auf net_migration
+world_map_plot <- ggplot(
+  world_map |>
+    dplyr::filter(continent == "Europe", iso_a3 != "RUS")
+) +
+  geom_sf(
+    aes(fill = net_migration),
+    color = "grey80", # Farbe der Ländergrenzen
+    linewidth = 0.2 # Dicke der Ländergrenzen
+  ) +
+  # Definiert die Farbskala: hellblau für niedrige Werte, dunkelblau für hohe Werte
+  # Länder ohne Daten werden grau dargestellt
+  # scales::comma_format verhindert wissenschaftliche Notation in der Legende
+  scale_fill_gradient(
+    low = "#deebf7",
+    high = "#08519c",
+    na.value = "grey90",
+    name = "Nettozuwanderung",
+    labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
+  ) +
+  theme_minimal() +
+  # Titel und Untertitel der Karte
+  labs(
+    title = "Nettozuwanderung in die Schweiz nach Herkunftsland",
+    subtitle = "Die 15 Hauptherkunftsländer im Datensatz"
+  ) +
+  # Entfernt Achsenbeschriftungen da sie bei Karten nicht sinnvoll sind
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank()
+  )
+
+world_map_plot
