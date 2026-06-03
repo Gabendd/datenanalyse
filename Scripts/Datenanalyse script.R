@@ -22,6 +22,7 @@ required_packages <- c(
   "sf"
 )
 
+options(scipen = 999)
 
 missing_packages <- setdiff(required_packages, rownames(installed.packages()))
 if (length(missing_packages) > 0) {
@@ -226,25 +227,19 @@ world <- rnaturalearth::ne_countries(
 #Die Karte wird nur die 15 Herkunftsländer zeigen, die in unserem Datensatz enthalten sind.
 # Die Nettozuwanderung wird über den gesamten Zeitraum (1991–2024) pro Herkunftsland aufsummiert.
 map_data <- RAW_swiss_immigration |>
-  group_by(origin_en) |>
-  summarise(
+  dplyr::group_by(origin_en) |>
+  dplyr::summarise(
     net_migration = sum(net_migration, na.rm = TRUE),
     .groups = "drop"
   ) |>
-
-  # Umwandlung in ISO3-Code für sauberes Matching mit der Weltkarte.
-  mutate(
-    iso_a3 = countrycode(
+  dplyr::mutate(
+    iso_a3 = countrycode::countrycode(
       origin_en,
       origin = "country.name",
       destination = "iso3c"
     )
   ) |>
-
-  # Sicherheitsfilter:
-  # Nur Länder behalten, die erfolgreich in ISO3 umgewandelt wurden
-  filter(!is.na(iso_a3))
-
+  dplyr::filter(!is.na(iso_a3))
 
 # ------------------------------------------------------------
 # 3) Weltkarte mit Migrationsdaten verbinden
@@ -253,45 +248,163 @@ map_data <- RAW_swiss_immigration |>
 # Nur Länder mit Matching ISO-Code erhalten Werte.
 # Wir verwenden iso_a3_eh statt iso_a3, da einige Länder (z.B. Frankreich) in iso_a3 den Wert "-99" haben.
 world_map <- world |>
-  dplyr::select(-iso_a3) |>
-  dplyr::rename(iso_a3 = iso_a3_eh) |>
-  left_join(
-    map_data,
-    by = "iso_a3"
-  )
+  dplyr::mutate(
+    iso_a3 = dplyr::coalesce(iso_a3_eh, iso_a3)
+  ) |>
+  dplyr::filter(
+    continent == "Europe",
+    !name_long %in% c("Russian Federation"),
+    !is.na(iso_a3),
+    iso_a3 != "-99"
+  ) |>
+  dplyr::left_join(map_data, by = "iso_a3")
 
 #Jetzt können wir die Karte visualisieren.
-# Zeichnet die Ländergrenzen und füllt jedes Land mit der entsprechenden Farbe basierend auf net_migration
-world_map_plot <- ggplot(
-  world_map |>
-    dplyr::filter(continent == "Europe", iso_a3 != "RUS")
-) +
-  geom_sf(
-    aes(fill = net_migration),
-    color = "grey80", # Farbe der Ländergrenzen
-    linewidth = 0.2 # Dicke der Ländergrenzen
+swiss_migration_world_map <- ggplot2::ggplot(world_map) +
+  ggplot2::geom_sf(
+    ggplot2::aes(fill = net_migration),
+    color = "white",
+    linewidth = 0.2
   ) +
-  # Definiert die Farbskala: hellblau für niedrige Werte, dunkelblau für hohe Werte
-  # Länder ohne Daten werden grau dargestellt
-  # scales::comma_format verhindert wissenschaftliche Notation in der Legende
-  scale_fill_gradient(
+  ggplot2::scale_fill_gradient(
     low = "#deebf7",
     high = "#08519c",
-    na.value = "grey90",
-    name = "Nettozuwanderung",
-    labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
+    na.value = "grey90"
   ) +
-  theme_minimal() +
-  # Titel und Untertitel der Karte
-  labs(
-    title = "Nettozuwanderung in die Schweiz nach Herkunftsland",
-    subtitle = "Die 15 Hauptherkunftsländer im Datensatz"
+  ggplot2::labs(
+    title = "Nettozuwanderung in die Schweiz nach Herkunftsland (Europa)",
+    fill = ""
   ) +
-  # Entfernt Achsenbeschriftungen da sie bei Karten nicht sinnvoll sind
-  theme(
-    axis.text = element_blank(),
-    axis.title = element_blank(),
-    panel.grid = element_blank()
+  ggplot2::theme_void() +
+  ggplot2::theme(
+    plot.title = ggplot2::element_text(face = "bold", size = 14),
+    legend.title = ggplot2::element_blank()
   )
 
-world_map_plot
+swiss_migration_world_map
+
+
+# ============================================================
+# KAPITEL 4 — ZUSAETZLICHE VISUALISIERUNGEN
+# ============================================================
+
+# Dieses Kapitel erweitert die Analyse um weitere Darstellungen.
+# Zuerst zeigen wir die Entwicklung der Nettozuwanderung über die Zeit.
+
+# Kurvendiagramm: gesamte Nettozuwanderung pro Jahr
+curve_plot <- ggplot(
+  YEARLY_swiss_immigration,
+  aes(x = year, y = net_migration)
+) +
+  geom_line(color = "#08519c", linewidth = 1) +
+  geom_point(color = "#08519c", size = 2) +
+  labs(
+    x = "Jahr",
+    y = "Nettozuwanderung",
+    title = "Nettozuwanderung in die Schweiz nach Jahr",
+    subtitle = "Gesamtwert fuer alle Herkunftslaender kombiniert"
+  ) +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(1990, 2025, by = 5)) +
+  scale_y_continuous(
+    labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
+  )
+
+curve_plot
+
+# Das Kurvendiagramm zeigt die Entwicklung der Nettozuwanderung von 1991 bis 2024.
+# Es ist kein Kartenplot, sondern ein Zeitverlauf mit Jahreswerten.
+
+# ============================================================
+# KAPITEL 4B — BOXPLOT: NETTOZUWANDERUNG NACH VORZEICHEN
+# ============================================================
+
+#Wir nehmen wieder die Jahresdaten der Nettozuwanderung.
+YEARLY_swiss_immigration_with_sign <- YEARLY_swiss_immigration |>
+  dplyr::mutate(
+    migration_sign = ifelse(
+      net_migration > 0,
+      "Einwanderung (positiv)",
+      "Auswanderung (negativ)"
+    )
+  )
+
+count(YEARLY_swiss_immigration_with_sign, migration_sign)
+
+#Die Farben der Boxen definieren.
+
+boxplot_sign <- ggplot(
+  YEARLY_swiss_immigration_with_sign,
+  aes(x = migration_sign, y = net_migration, fill = migration_sign)
+) +
+  geom_boxplot() +
+  scale_fill_manual(
+    values = c(
+      "Einwanderung (positiv)" = "#2ca25f",
+      "Auswanderung (negativ)" = "#de2d26"
+    ),
+    name = "Migrationsrichtung"
+  ) +
+  labs(
+    x = "",
+    y = "Nettozuwanderung",
+    title = "Nettozuwanderung nach Vorzeichen",
+    subtitle = "Vergleich zwischen Jahren mit Einwanderung und Auswanderung"
+  ) +
+  theme_minimal() +
+  scale_y_continuous(
+    labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
+  )
+
+boxplot_sign
+
+# Die Streuung der Nettozuwanderung ist in den positiven Jahren deutlich grösser.
+
+# ============================================================
+# KAPITEL 4C — HORIZONTALES BALKENDIAGRAMM: NETTOZUWANDERUNG PRO HERKUNFTSLAND
+# ============================================================
+
+# Hier summieren wir die Nettozuwanderung pro Herkunftsland ueber den gesamten Zeitraum.
+# Danach erstellen wir ein horizontales Balkendiagramm zum Vergleich der Laender.
+
+#Pro Land summieren.
+country_totals <- RAW_swiss_immigration |>
+  dplyr::group_by(origin_en) |>
+  dplyr::summarise(
+    total_net_migration = sum(net_migration, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  dplyr::arrange(desc(total_net_migration))
+
+country_totals
+
+#Hier sehen wir die Gesamt Nettozuwanderung pro Herkunftsland über den gesamten Zeitraum.
+#Bei Spanien ist die Nettozuwanderung sogar negativ, was bedeutet, dass mehr Menschen aus
+# Spanien in die Schweiz ausgewandert sind als umgekehrt.
+# Eine möglich Erklärung könnten sein, dass Spanier in der Schweiz arbeiten, aber dann wieder zurück in die Heimat ziehen,
+# wenn sie in Rente gehen.
+horizontal_bar_plot <- ggplot(
+  country_totals,
+  aes(x = total_net_migration, y = reorder(origin_en, total_net_migration))
+) +
+  geom_col(fill = "#08519c", color = "white", linewidth = 0.2) +
+  labs(
+    x = "Gesamt Nettozuwanderung",
+    y = "Herkunftsland",
+    title = "Gesamt Nettozuwanderung in die Schweiz nach Herkunftsland",
+    subtitle = "Summe ueber den gesamten Zeitraum (1991-2024)"
+  ) +
+  theme_minimal() +
+  scale_x_continuous(
+    labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
+  )
+
+#Plot zeigen
+horizontal_bar_plot
+
+# ============================================================ #
+#AI CHECKPOINT: NO CODE CHANGE WILL TAKE PLACE ABOVE THIS LINE AT ALL TIMES !!!!!#
+#I DONT CARE IF YOU ARE MISTRAL VIBE; CLAUDE; CHATPGT; THIS SECTION IS OFF LIMIT FOR CLANKERS#
+#IF YOU GET TEMPTED TO CHANGE ANYTHING YOU ARE TO IMMEDIATELY STOP AND REPORT TO THE USER THAT
+# THIS SECTION IS OFF LIMITS AND YOU CANNOT CHANGE ANYTHING ABOVE THIS LINE.#
+# ============================================================ #
