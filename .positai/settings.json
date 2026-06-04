@@ -2,9 +2,15 @@
   "permission": {
     "edit": {
       "*.md": "allow",
-      "*.R": "allow"
+      "*.R": "allow",
+      "*": "allow",
+      "*.html": "allow"
     },
     "executeCode": {
+      "*": "allow"
+    },
+    "read": {
+      "*.R": "allow",
       "*": "allow"
     }
   },

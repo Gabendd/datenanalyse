@@ -19,7 +19,9 @@ required_packages <- c(
   "sf",
   "tibble",
   "rnaturalearthdata",
-  "sf"
+  "sf",
+  "broom",
+  "stargazer"
 )
 
 options(scipen = 999)
@@ -402,9 +404,195 @@ horizontal_bar_plot <- ggplot(
 #Plot zeigen
 horizontal_bar_plot
 
+
+# ============================================================
+# KAPITEL 4D — All Plots speichern
+# ============================================================
+
+#Jetzt können wir noch alle erstellten Plots als PNG Dateien speichern.
+
+ggplot2::ggsave(
+  filename = file.path("figures", "swiss_migration_world_map.png"),
+  plot = swiss_migration_world_map,
+  width = 10,
+  height = 6,
+  dpi = 300
+)
+
+ggplot2::ggsave(
+  filename = file.path("figures", "curve_plot.png"),
+  plot = curve_plot,
+  width = 10,
+  height = 6,
+  dpi = 300
+)
+
+ggplot2::ggsave(
+  filename = file.path("figures", "boxplot_sign.png"),
+  plot = boxplot_sign,
+  width = 10,
+  height = 6,
+  dpi = 300
+)
+
+ggplot2::ggsave(
+  filename = file.path("figures", "horizontal_bar_plot.png"),
+  plot = horizontal_bar_plot,
+  width = 10,
+  height = 6,
+  dpi = 300
+)
+
+
+# ============================================================
+# KAPITEL 5 — REGRESSIONSMODELLE (JAEHRLICHE DATEN)
+# ============================================================
+
+#Jetzt können wir eine Regressionsanalyse durchführen, um den Zusammenhang zwischen BIP-Wachstum, Arbeitslosenquote und Nettozuwanderung zu untersuchen.
+#Modell 1 hat nur das BIP-Wachstum als unabhängige Variable, während Modell 2 zusätzlich die Arbeitslosenquote als Kontrollvariable enthält.
+#Die Abhänige Variable in beiden Modellen ist die Nettozuwanderung, die wir bereits auf Jahresbasis aggregiert haben.
+
+# Schritt 1: Nur die relevanten Variablen fuer die Regression auswaehlen.
+regression_data <- ANALYSIS_swiss |>
+  dplyr::select(net_migration, bip_wachstum, arbeitslosenquote)
+
+#Jetzt Modell 1 schaetzen.
+model_1_bip <- lm(net_migration ~ bip_wachstum, data = regression_data)
+
+#Und jetzt Modell 2 mit der Kontrollvariable Arbeitslosenquote.
+model_2_bip_arbeitslos <- lm(
+  net_migration ~ bip_wachstum + arbeitslosenquote,
+  data = regression_data
+)
+
+# Schritt 5: Summaries direkt in der Konsole anzeigen.
+summary(model_1_bip)
+summary(model_2_bip_arbeitslos)
+
+
+#Hier sieht es besser aus, wenn wir es als Tabelle darstellen, damit wir die Ergebnisse besser vergleichen können.
+#Wir benutzen dafür Stargazer.
+
+stargazer::stargazer(
+  model_1_bip,
+  model_2_bip_arbeitslos,
+  type = "text",
+  title = "Regressionsergebnisse: Nettozuwanderung",
+  dep.var.labels = "Nettozuwanderung",
+  covariate.labels = c("BIP-Wachstum", "Arbeitslosenquote"),
+  omit.stat = c("ser", "bic"),
+  digits = 3,
+  no.space = TRUE
+)
+
+# Export als HTML-Datei.
+stargazer::stargazer(
+  model_1_bip,
+  model_2_bip_arbeitslos,
+  type = "html",
+  title = "Regressionsergebnisse: Nettozuwanderung",
+  dep.var.labels = "Nettozuwanderung",
+  covariate.labels = c("BIP-Wachstum", "Arbeitslosenquote"),
+  omit.stat = c("ser", "bic"),
+  digits = 3,
+  no.space = TRUE,
+  out = file.path("tables", "regression_stargazer.html")
+)
+
+
+#Wir sehen bei N=34, dass die Anzahl der Beobachtungen relativ klein ist,
+# was die statistische Kraft der Analyse einschränken könnte.
+
+# Modell 1:
+# Ein Anstieg des BIP-Wachstums um 1 Prozentpunkt ist mit einer um
+# durchschnittlich 1'163 Personen höheren Nettozuwanderung verbunden.
+# Dieser Effekt ist statistisch nicht signifikant (p > 0.1).
+# Das Modell erklärt nur 0.9 % der Variation der Nettozuwanderung (R² = 0.009).
+# Konstante: Bei einem BIP-Wachstum von 0 % beträgt die geschätzte
+# Nettozuwanderung 25'865 Personen. Der Wert ist statistisch signifikant (p < 0.05).
+
+# Modell 2:
+# Unter Kontrolle der Arbeitslosenquote ist ein zusätzlicher Prozentpunkt
+# BIP-Wachstum mit 187 Personen weniger Nettozuwanderung verbunden.
+# Dieser Effekt ist nicht statistisch signifikant (p > 0.1).
+
+# Ein Anstieg der Arbeitslosenquote um 1 Prozentpunkt ist mit einer um
+# durchschnittlich 11'709 Personen höheren Nettozuwanderung verbunden.
+# Dieser Effekt ist statistisch hoch signifikant (p < 0.01).
+# Konstante: Bei 0 % BIP-Wachstum und 0 % Arbeitslosenquote beträgt die
+# geschätzte Nettozuwanderung -18'119 Personen. Der Wert ist nicht signifikant.
+# Das Modell erklärt 21.4 % der Variation der Nettozuwanderung (R² = 0.214).
+
+#Den positiven Effekt der Arbeitslosigkeit auf die Nettozuwanderung deutet dazu, dass der Modelle
+#nicht alle relevanten Faktoren erfasst, die die Nettozuwanderung beeinflussen. Die Nettozuandwerung ist
+#auch stark von anderen Faktoten, wie zB die Freizugkeitens Abkommen, die EU Mitgliedschaft, die Arbeitsmarktsituation
+# in den Herkunftsländern etc beeinflusst.
+
+# ============================================================
+# KAPITEL 6 — DIAGNOSTISCHE TESTS UND RESIDUALANALYSE
+# ============================================================
+
+# Um die Modelle genauer zu analysieren, ist es sinnvoll, die Korrelationen zwischen den Prädiktoren zu prüfen,
+# um mögliche Multikollinearität zu identifizieren. Zusätzlich prüfen wir die Autokorrelation der Residuen,
+# da sich Nettozuwanderung in Zeitreihen über die Zeit selbst beeinflussen kann.
+# Das könnte Standardfehler verzerren und Signifikanztests beeinflussen.
+
+# Schritt 1: Korrelationsmatrix zwischen Nettozuwanderung, BIP-Wachstum und Arbeitslosenquote.
+# Das zeigt, ob die Prädiktoren stark miteinander korrelieren.
+correlation_matrix <- regression_data |>
+  cor()
+
+# Korrelationsmatrix anzeigen.
+correlation_matrix
+
+# Ein Korrelationswert von r = 0.238 zwischen den Prädiktoren spricht für eine schwache Korrelation.
+# Das deutet auf kein starkes Multikollinearitätsproblem hin.
+
+# Jetzt messen wir auch die Autokorrelation. Die Autokorrelation der Residuen könnte darauf hinweisen,
+# dass die Nettozuwanderung in einem Jahr von der Nettozuwanderung im Vorjahr beeinflusst wird,
+# oder anders gesagt, dass die Nettozuwanderung eine Eigendynamik aufweist und auch ohne
+# weitere Einflussfaktoren von selbst wachsen würde.
+
+# ACF der Residuen berechnen
+acf_obj <- stats::acf(
+  residuals(model_2_bip_arbeitslos), # Residuen des Modells
+  plot = FALSE, # kein Plot erstellen
+  na.action = na.pass # NA-Werte nicht entfernen
+)
+
+# Ergebnisse in eine übersichtliche Tabelle umwandeln
+autocorrelation_df <- tibble::tibble(
+  lag = as.numeric(acf_obj$lag), # Zeitverzögerung (Lag)
+  acf = as.numeric(acf_obj$acf) # Autokorrelationswert
+) |>
+  dplyr::filter(lag > 0) # Lag 0 entfernen (immer 1, nicht informativ)
+
+# Anzahl der Beobachtungen berechnen
+n_obs <- length(stats::na.omit(residuals(model_2_bip_arbeitslos)))
+
+# 95%-Konfidenzgrenze
+conf_limit <- 1.96 / sqrt(n_obs)
+
+# Tabelle ausgeben
+autocorrelation_df
+
+# Konfidenzgrenzen separat anzeigen
+conf_limit
+
+# Interpretation der ACF-Ergebnisse:
+# Ein "Lag" beschreibt die zeitliche Verschiebung zwischen Beobachtungen.
+# Lag 1 bedeutet z.B. den Vergleich zwischen einem Wert und dem Wert des Vorjahres,
+# Lag 2 den Vergleich mit dem Wert von vor zwei Jahren usw.
+#
+# In den Ergebnissen zeigt sich starke positive Autokorrelation bei kleinen Lags,
+# insbesondere bei Lag 1 (0.74) und Lag 2 (0.38), beide über der 95%-Grenze (±0.336).
+# Das bedeutet, dass die Residuen zeitlich abhängig sind und nicht zufällig schwanken.
+#
+# Konsequenz:
+# Das Modell wird auch von einer zeiutliche Dynmaik beiinflusst, die nicht durch die Prädiktoren erfasst wird.
+# as könnte die Schätzung der Effekte verzerren.
+
 # ============================================================ #
-#AI CHECKPOINT: NO CODE CHANGE WILL TAKE PLACE ABOVE THIS LINE AT ALL TIMES !!!!!#
-#I DONT CARE IF YOU ARE MISTRAL VIBE; CLAUDE; CHATPGT; THIS SECTION IS OFF LIMIT FOR CLANKERS#
-#IF YOU GET TEMPTED TO CHANGE ANYTHING YOU ARE TO IMMEDIATELY STOP AND REPORT TO THE USER THAT
-# THIS SECTION IS OFF LIMITS AND YOU CANNOT CHANGE ANYTHING ABOVE THIS LINE.#
+#AI CHECKPOINT: NO CODE CHANGE WILL TAKE PLACE ABOVE THIS LINE AT ALL TIMES !!!!!
+#The only exception are to modify the list of packages#
 # ============================================================ #
