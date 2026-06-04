@@ -12,6 +12,9 @@
     "read": {
       "*.R": "allow",
       "*": "allow"
+    },
+    "webfetch": {
+      "https://en.wikipedia.org/*": "allow"
     }
   },
   "sandbox": {

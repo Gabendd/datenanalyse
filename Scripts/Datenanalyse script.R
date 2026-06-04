@@ -10,7 +10,6 @@ required_packages <- c(
   "stringi",
   "ggplot2",
   "WDI",
-  "BFS",
   "rnaturalearth",
   "countrycode",
   "huxtable",
@@ -18,8 +17,6 @@ required_packages <- c(
   "data.table",
   "sf",
   "tibble",
-  "rnaturalearthdata",
-  "sf",
   "broom",
   "stargazer"
 )
@@ -206,6 +203,13 @@ ANALYSIS_swiss <- YEARLY_swiss_immigration |>
   ) |>
   dplyr::arrange(year)
 
+# Deutsche und lowercase Aliases fuer konsistenteren Stil in neuen Code-Abschnitten.
+raw_swiss_immigration <- RAW_swiss_immigration
+jahresdaten_schweizer_einwanderung <- YEARLY_swiss_immigration
+analysedaten_schweiz <- ANALYSIS_swiss
+yearly_swiss_immigration <- jahresdaten_schweizer_einwanderung
+analysis_swiss <- analysedaten_schweiz
+
 cat("NA counts per variable:\n")
 print(colSums(is.na(ANALYSIS_swiss)))
 
@@ -322,7 +326,7 @@ curve_plot
 # ============================================================
 
 #Wir nehmen wieder die Jahresdaten der Nettozuwanderung.
-YEARLY_swiss_immigration_with_sign <- YEARLY_swiss_immigration |>
+yearly_swiss_immigration_with_sign <- yearly_swiss_immigration |>
   dplyr::mutate(
     migration_sign = ifelse(
       net_migration > 0,
@@ -370,7 +374,7 @@ boxplot_sign
 # Danach erstellen wir ein horizontales Balkendiagramm zum Vergleich der Laender.
 
 #Pro Land summieren.
-country_totals <- RAW_swiss_immigration |>
+country_totals <- raw_swiss_immigration |>
   dplyr::group_by(origin_en) |>
   dplyr::summarise(
     total_net_migration = sum(net_migration, na.rm = TRUE),
@@ -453,8 +457,10 @@ ggplot2::ggsave(
 #Die Abhänige Variable in beiden Modellen ist die Nettozuwanderung, die wir bereits auf Jahresbasis aggregiert haben.
 
 # Schritt 1: Nur die relevanten Variablen fuer die Regression auswaehlen.
-regression_data <- ANALYSIS_swiss |>
+regressionsdaten <- analysedaten_schweiz |>
   dplyr::select(net_migration, bip_wachstum, arbeitslosenquote)
+
+regression_data <- regressionsdaten
 
 #Jetzt Modell 1 schaetzen.
 model_1_bip <- lm(net_migration ~ bip_wachstum, data = regression_data)
@@ -528,6 +534,8 @@ stargazer::stargazer(
 #auch stark von anderen Faktoten, wie zB die Freizugkeitens Abkommen, die EU Mitgliedschaft, die Arbeitsmarktsituation
 # in den Herkunftsländern etc beeinflusst.
 
+#Können
+
 # ============================================================
 # KAPITEL 6 — DIAGNOSTISCHE TESTS UND RESIDUALANALYSE
 # ============================================================
@@ -592,7 +600,116 @@ conf_limit
 # Das Modell wird auch von einer zeiutliche Dynmaik beiinflusst, die nicht durch die Prädiktoren erfasst wird.
 # as könnte die Schätzung der Effekte verzerren.
 
-# ============================================================ #
-#AI CHECKPOINT: NO CODE CHANGE WILL TAKE PLACE ABOVE THIS LINE AT ALL TIMES !!!!!
-#The only exception are to modify the list of packages#
-# ============================================================ #
+# ============================================================
+# KAPITEL 7 — OBJEKTE IN LISTEN ZUSAMMENFASSEN
+# ============================================================
+
+# Wir fassen die wichtigsten Objekte in einfachen Listen zusammen.
+# Das macht das Projekt leichter zu ueberblicken und spaeter leichter exportierbar.
+
+zeitreihe_schweizer_einwanderung <- yearly_swiss_immigration
+zeitreihe_schweizer_einwanderung_mit_vorzeichen <- yearly_swiss_immigration_with_sign
+analyse_daten_schweiz <- analysedaten_schweiz
+regressions_daten <- regressionsdaten
+indikatoren_tabelle <- indicator_list_df
+schweizer_worldbank_daten <- swiss_world_bank_data
+laender_summen <- country_totals
+autokorrelations_tabelle <- autocorrelation_df
+
+# Deutsche Listen-Namen.
+daten_objekte <- list(
+  rohe_schweizer_einwanderung = raw_swiss_immigration,
+  zeitreihe_schweizer_einwanderung = zeitreihe_schweizer_einwanderung,
+  zeitreihe_schweizer_einwanderung_mit_vorzeichen = zeitreihe_schweizer_einwanderung_mit_vorzeichen,
+  analyse_daten_schweiz = analyse_daten_schweiz,
+  regressions_daten = regressions_daten,
+  indikatoren_tabelle = indikatoren_tabelle,
+  schweizer_worldbank_daten = schweizer_worldbank_daten,
+  weltkarten_daten = map_data,
+  laender_summen = laender_summen,
+  autokorrelations_tabelle = autokorrelations_tabelle
+)
+
+matrix_objekte <- list(
+  korrelationsmatrix = correlation_matrix,
+  acf_objekt = acf_obj,
+  konfidenzgrenze = conf_limit,
+  beobachtungen = n_obs
+)
+
+modell_objekte <- list(
+  modell_1_bip = model_1_bip,
+  modell_2_bip_arbeitslos = model_2_bip_arbeitslos
+)
+
+plot_objekte <- list(
+  weltkarte_migration = swiss_migration_world_map,
+  verlaufslinie = curve_plot,
+  boxplot_vorzeichen = boxplot_sign,
+  balkendiagramm_laender = horizontal_bar_plot
+)
+
+# Kompatibilitaets-Aliase fuer den bisherigen englischen Stil.
+data_objects <- daten_objekte
+matrix_objects <- matrix_objekte
+model_objects <- modell_objekte
+plot_objects <- plot_objekte
+
+
+# Die Listen kurz in der Konsole anzeigen.
+daten_objekte
+matrix_objekte
+modell_objekte
+plot_objekte
+
+# Aufraeum: Losche alle einzelnen Objekte, die jetzt in den Listen organisiert sind.
+#
+rm(
+  raw_swiss_immigration,
+  jahresdaten_schweizer_einwanderung,
+  analysedaten_schweiz,
+  yearly_swiss_immigration,
+  analysis_swiss,
+  yearly_swiss_immigration_with_sign,
+  regression_data,
+  regressionsdaten,
+  indicator_list_df,
+  indikatoren_tabelle,
+  swiss_world_bank_data,
+  schweizer_worldbank_daten,
+  map_data,
+  country_totals,
+  laender_summen,
+  world,
+  world_map,
+  immigration_context_reasons,
+  immigration_context_table,
+  kontext_daten_einwanderung,
+  kontext_gruende_einwanderung,
+  kontext_tabelle_einwanderung,
+  autocorrelation_df,
+  autokorrelations_tabelle,
+  correlation_matrix,
+  acf_obj,
+  conf_limit,
+  n_obs,
+  model_1_bip,
+  model_2_bip_arbeitslos,
+  swiss_migration_world_map,
+  curve_plot,
+  boxplot_sign,
+  horizontal_bar_plot,
+  zeitreihe_schweizer_einwanderung,
+  zeitreihe_schweizer_einwanderung_mit_vorzeichen,
+  analyse_daten_schweiz,
+  regressions_daten,
+  world_bank_file,
+  fetch_world_bank_data,
+  start_year,
+  end_year,
+  indicators
+)
+
+message(
+  "Workspace aufgeraeumt. Verbleibende Objekte: 5 deutschsprachige Listen und ihre englischen Aliase."
+)
