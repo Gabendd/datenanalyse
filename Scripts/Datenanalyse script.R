@@ -18,7 +18,9 @@ required_packages <- c(
   "sf",
   "tibble",
   "broom",
-  "stargazer"
+  "stargazer",
+  "texreg",
+  "tidyr"
 )
 
 options(scipen = 999)
@@ -203,7 +205,7 @@ ANALYSIS_swiss <- YEARLY_swiss_immigration |>
   ) |>
   dplyr::arrange(year)
 
-# Deutsche und lowercase Aliases fuer konsistenteren Stil in neuen Code-Abschnitten.
+# Deutsche und lowercase Aliases für konsistenteren Stil in neuen Code-Abschnitten.
 raw_swiss_immigration <- RAW_swiss_immigration
 jahresdaten_schweizer_einwanderung <- YEARLY_swiss_immigration
 analysedaten_schweiz <- ANALYSIS_swiss
@@ -279,15 +281,17 @@ swiss_migration_world_map <- ggplot2::ggplot(world_map) +
   ) +
   ggplot2::labs(
     title = "Nettozuwanderung in die Schweiz nach Herkunftsland (Europa)",
-    fill = ""
+    fill = "",
+    caption = "Nur die 15 Herkunftsländer aus den Einwanderungsdaten"
   ) +
   ggplot2::theme_void() +
   ggplot2::theme(
     plot.title = ggplot2::element_text(face = "bold", size = 14),
-    legend.title = ggplot2::element_blank()
+    legend.title = ggplot2::element_blank(),
+    plot.caption = ggplot2::element_text(size = 9, hjust = 0)
   )
 
-swiss_migration_world_map
+print(swiss_migration_world_map)
 
 
 # ============================================================
@@ -308,7 +312,7 @@ curve_plot <- ggplot(
     x = "Jahr",
     y = "Nettozuwanderung",
     title = "Nettozuwanderung in die Schweiz nach Jahr",
-    subtitle = "Gesamtwert fuer alle Herkunftslaender kombiniert"
+    subtitle = "Gesamtwert für alle Herkunftsländer kombiniert"
   ) +
   theme_minimal() +
   scale_x_continuous(breaks = seq(1990, 2025, by = 5)) +
@@ -316,7 +320,7 @@ curve_plot <- ggplot(
     labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
   )
 
-curve_plot
+print(curve_plot)
 
 # Das Kurvendiagramm zeigt die Entwicklung der Nettozuwanderung von 1991 bis 2024.
 # Es ist kein Kartenplot, sondern ein Zeitverlauf mit Jahreswerten.
@@ -326,7 +330,7 @@ curve_plot
 # ============================================================
 
 #Wir nehmen wieder die Jahresdaten der Nettozuwanderung.
-yearly_swiss_immigration_with_sign <- yearly_swiss_immigration |>
+yearly_swiss_immigration <- yearly_swiss_immigration |>
   dplyr::mutate(
     migration_sign = ifelse(
       net_migration > 0,
@@ -335,12 +339,12 @@ yearly_swiss_immigration_with_sign <- yearly_swiss_immigration |>
     )
   )
 
-count(YEARLY_swiss_immigration_with_sign, migration_sign)
+count(yearly_swiss_immigration, migration_sign)
 
 #Die Farben der Boxen definieren.
 
 boxplot_sign <- ggplot(
-  YEARLY_swiss_immigration_with_sign,
+  yearly_swiss_immigration,
   aes(x = migration_sign, y = net_migration, fill = migration_sign)
 ) +
   geom_boxplot() +
@@ -362,7 +366,7 @@ boxplot_sign <- ggplot(
     labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
   )
 
-boxplot_sign
+print(boxplot_sign)
 
 # Die Streuung der Nettozuwanderung ist in den positiven Jahren deutlich grösser.
 
@@ -370,7 +374,7 @@ boxplot_sign
 # KAPITEL 4C — HORIZONTALES BALKENDIAGRAMM: NETTOZUWANDERUNG PRO HERKUNFTSLAND
 # ============================================================
 
-# Hier summieren wir die Nettozuwanderung pro Herkunftsland ueber den gesamten Zeitraum.
+# Hier summieren wir die Nettozuwanderung pro Herkunftsland über den gesamten Zeitraum.
 # Danach erstellen wir ein horizontales Balkendiagramm zum Vergleich der Laender.
 
 #Pro Land summieren.
@@ -398,7 +402,7 @@ horizontal_bar_plot <- ggplot(
     x = "Gesamt Nettozuwanderung",
     y = "Herkunftsland",
     title = "Gesamt Nettozuwanderung in die Schweiz nach Herkunftsland",
-    subtitle = "Summe ueber den gesamten Zeitraum (1991-2024)"
+    subtitle = "Summe über den gesamten Zeitraum (1991-2024)"
   ) +
   theme_minimal() +
   scale_x_continuous(
@@ -406,7 +410,7 @@ horizontal_bar_plot <- ggplot(
   )
 
 #Plot zeigen
-horizontal_bar_plot
+print(horizontal_bar_plot)
 
 
 # ============================================================
@@ -456,11 +460,15 @@ ggplot2::ggsave(
 #Modell 1 hat nur das BIP-Wachstum als unabhängige Variable, während Modell 2 zusätzlich die Arbeitslosenquote als Kontrollvariable enthält.
 #Die Abhänige Variable in beiden Modellen ist die Nettozuwanderung, die wir bereits auf Jahresbasis aggregiert haben.
 
-# Schritt 1: Nur die relevanten Variablen fuer die Regression auswaehlen.
+# Schritt 1: Nur die relevanten Variablen für die Regression auswählen.
 regressionsdaten <- analysedaten_schweiz |>
   dplyr::select(net_migration, bip_wachstum, arbeitslosenquote)
 
 regression_data <- regressionsdaten
+
+# Als Sicherheit speichern wir die Regressionsdaten auch als CSV Datei.
+
+readr::write_csv(regression_data, "data/regression_data.csv")
 
 #Jetzt Modell 1 schaetzen.
 model_1_bip <- lm(net_migration ~ bip_wachstum, data = regression_data)
@@ -477,32 +485,30 @@ summary(model_2_bip_arbeitslos)
 
 
 #Hier sieht es besser aus, wenn wir es als Tabelle darstellen, damit wir die Ergebnisse besser vergleichen können.
-#Wir benutzen dafür Stargazer.
+#Wir benutzen dafür texreg.
 
-stargazer::stargazer(
-  model_1_bip,
-  model_2_bip_arbeitslos,
-  type = "text",
-  title = "Regressionsergebnisse: Nettozuwanderung",
-  dep.var.labels = "Nettozuwanderung",
-  covariate.labels = c("BIP-Wachstum", "Arbeitslosenquote"),
-  omit.stat = c("ser", "bic"),
-  digits = 3,
-  no.space = TRUE
+texreg::screenreg(
+  list(Modell_1 = model_1_bip, Modell_2 = model_2_bip_arbeitslos),
+  custom.model.names = c("Modell 1", "Modell 2"),
+  custom.coef.names = c("(Intercept)", "BIP-Wachstum", "Arbeitslosenquote"),
+  custom.dep.var = "Nettozuwanderung",
+  digits = 5,
+  single.row = FALSE,
+  include.f = TRUE,
+  caption = "Regressionsergebnisse: Nettozuwanderung"
 )
 
 # Export als HTML-Datei.
-stargazer::stargazer(
-  model_1_bip,
-  model_2_bip_arbeitslos,
-  type = "html",
-  title = "Regressionsergebnisse: Nettozuwanderung",
-  dep.var.labels = "Nettozuwanderung",
-  covariate.labels = c("BIP-Wachstum", "Arbeitslosenquote"),
-  omit.stat = c("ser", "bic"),
-  digits = 3,
-  no.space = TRUE,
-  out = file.path("tables", "regression_stargazer.html")
+texreg::htmlreg(
+  list(Modell_1 = model_1_bip, Modell_2 = model_2_bip_arbeitslos),
+  file = file.path("tables", "regression_texreg.html"),
+  custom.model.names = c("Modell 1", "Modell 2"),
+  custom.coef.names = c("(Intercept)", "BIP-Wachstum", "Arbeitslosenquote"),
+  custom.dep.var = "Nettozuwanderung",
+  digits = 5,
+  single.row = FALSE,
+  include.f = TRUE,
+  caption = "Regressionsergebnisse: Nettozuwanderung"
 )
 
 
@@ -533,8 +539,6 @@ stargazer::stargazer(
 #nicht alle relevanten Faktoren erfasst, die die Nettozuwanderung beeinflussen. Die Nettozuandwerung ist
 #auch stark von anderen Faktoten, wie zB die Freizugkeitens Abkommen, die EU Mitgliedschaft, die Arbeitsmarktsituation
 # in den Herkunftsländern etc beeinflusst.
-
-#Können
 
 # ============================================================
 # KAPITEL 6 — DIAGNOSTISCHE TESTS UND RESIDUALANALYSE
@@ -605,10 +609,10 @@ conf_limit
 # ============================================================
 
 # Wir fassen die wichtigsten Objekte in einfachen Listen zusammen.
-# Das macht das Projekt leichter zu ueberblicken und spaeter leichter exportierbar.
+# Das macht das Projekt leichter zu überblicken und später leichter exportierbar.
 
 zeitreihe_schweizer_einwanderung <- yearly_swiss_immigration
-zeitreihe_schweizer_einwanderung_mit_vorzeichen <- yearly_swiss_immigration_with_sign
+zeitreihe_schweizer_einwanderung_mit_vorzeichen <- yearly_swiss_immigration
 analyse_daten_schweiz <- analysedaten_schweiz
 regressions_daten <- regressionsdaten
 indikatoren_tabelle <- indicator_list_df
@@ -649,7 +653,7 @@ plot_objekte <- list(
   balkendiagramm_laender = horizontal_bar_plot
 )
 
-# Kompatibilitaets-Aliase fuer den bisherigen englischen Stil.
+# Kompatibilitäts-Aliase für den bisherigen englischen Stil.
 data_objects <- daten_objekte
 matrix_objects <- matrix_objekte
 model_objects <- modell_objekte
@@ -670,7 +674,7 @@ rm(
   analysedaten_schweiz,
   yearly_swiss_immigration,
   analysis_swiss,
-  yearly_swiss_immigration_with_sign,
+  yearly_swiss_immigration,
   regression_data,
   regressionsdaten,
   indicator_list_df,
