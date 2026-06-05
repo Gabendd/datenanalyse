@@ -20,10 +20,12 @@ required_packages <- c(
   "broom",
   "stargazer",
   "texreg",
-  "tidyr"
+  "tidyr",
+  "codetools"
 )
 
 options(scipen = 999)
+options(repos = c(CRAN = "https://cloud.r-project.org"))
 
 missing_packages <- setdiff(required_packages, rownames(installed.packages()))
 if (length(missing_packages) > 0) {
@@ -41,18 +43,18 @@ invisible(lapply(paths, function(path) {
 }))
 
 # ============================================================
-# KAPITEL 2 — Daten Importieren und Aufbereiten
+# KAPITEL 2 — DATEN IMPORTIEREN UND AUFBEREITEN
 # ============================================================
 
 # ============================================================
-# KAPITEL 2A —  Schweizerische Einwanderungsdaten importieren und aufbereiten.
+# KAPITEL 2A — SCHWEIZERISCHE EINWANDERUNGSDATEN IMPORTIEREN UND AUFBEREITEN
 # ============================================================
-#Bei der Swiss Immigration Dataien handelt es sich um auf die BFS Webseite manuell heruntergeladene CSV Datei.
+# Bei den Schweizerischen Einwanderungsdaten handelt es sich um von der BFS-Webseite manuell heruntergeladene CSV-Dateien.
 
-#Hier wird das Immigration Data importiert, die Spalten werden in die richtigen Formate umgewandelt, und es werden nur die relevanten Herkunftsländer und Zeilen behalten.
-# Danach wird die Daten nach Herkunftsland und Jahr sortiert. Nur die relevanten Variablen (origin_en, year, net_migration) werden behalten.
-#Auch werden die Zeilen mit aggregierten Regionen (z.B. "Afrique", "Amérique", "Asie", "Océanie") sowie die Zeilen mit nicht-informativem Text
-# (z.B. "Renseignements|Source|© OFS") herausgefiltert.
+# Hier werden die Einwanderungsdaten importiert, die Spalten in die richtigen Formate umgewandelt und nur die relevanten
+# Herkunftsländer und Zeilen behalten. Danach werden die Daten nach Herkunftsland und Jahr sortiert. Nur die relevanten
+# Variablen (origin_en, year, net_migration) werden behalten. Zudem werden die Zeilen mit aggregierten Regionen (z. B. "Afrique",
+# "Amérique", "Asie", "Océanie") sowie die Zeilen mit nicht-informativem Text (z. B. "Renseignements|Source|© OFS") herausgefiltert.
 
 # Immigrationsdaten einlesen, bereinigen und filtern
 RAW_swiss_immigration <- readr::read_csv(
@@ -102,13 +104,13 @@ summary(YEARLY_swiss_immigration$net_migration)
 # Für die Regressionsanalyse werden die Daten auf Jahresbasis aggregiert.
 
 # ============================================================
-# KAPITEL 2B —  World Bank Indikatoren importieren und aufbereiten.
+# KAPITEL 2B — WORLD BANK INDIKATOREN IMPORTIEREN UND AUFBEREITEN
 # ============================================================
 
-# Hier importiere ich die Indikatoren der World Bank, die ich für die Analyse verwenden möchte. Mit meiner Masterarbeit arbeite
-#ich so, indem ich zuerst die Indikator definiere dich ich brauch, und danach den API call sende.
-# Bei World Bank Indikatoren handelt es sich um unsere Unabhängige Variable (BIP-Wachstum) und eine Kontrollvariable (Arbeitslosenquote).
-# Die Abhänige Variable ist die Nettozuwanderung, die wir bereits vorher importiert und aufbereitet haben.
+# Hier werden die Indikatoren der World Bank importiert, die für die Analyse benötigt werden. Ich gehe dabei so vor,
+# dass ich zuerst die benötigten Indikatoren definiere und danach den API-Aufruf durchführe.
+# Bei den World Bank Indikatoren handelt es sich um unsere unabhängige Variable (BIP-Wachstum) und eine Kontrollvariable
+# (Arbeitslosenquote). Die abhängige Variable ist die Nettozuwanderung, die wir bereits vorher importiert und aufbereitet haben.
 indicator_list_df <- tibble::tibble(
   Code = c(
     "NY.GDP.MKTP.KD.ZG",
@@ -122,10 +124,10 @@ indicator_list_df <- tibble::tibble(
   )
 )
 
-#Die Indikatoren als Referenz Liste speichern.
+# Die Indikatoren als Referenzliste speichern.
 indicators <- indicator_list_df$Code
 
-#Jetzt die World Bank Indikatoren Mithilfe APi importieren.
+# Jetzt werden die World Bank Indikatoren mithilfe der API importiert.
 # Das Skript prüft zuerst, ob die Datei bereits existiert. Wenn ja, wird sie geladen. Wenn nein, wird der API-Aufruf durchgeführt.
 # Zusätzlich prüft das Skript, ob alle benötigten Indikatoren in der vorhandenen Datei enthalten sind.
 # Wenn nicht, wird die Datei erneut mit den fehlenden Indikatoren aktualisiert.
@@ -133,8 +135,8 @@ indicators <- indicator_list_df$Code
 # Definiere den Dateipfad
 world_bank_file <- "data/world_bank_raw.rds"
 
-# Definiere den Zeitrahmen (min/max Jahr der Schweizer Einwanderungsdaten). Somit werden nur die Jahre abgefragt, für die wir auch Einwanderungsdaten haben.
-# Das spart Zeit und API-Aufrufe.
+# Definiere den Zeitrahmen (min/max Jahr der Schweizer Einwanderungsdaten). Somit werden nur die Jahre abgefragt,
+# für die wir auch Einwanderungsdaten haben. Das spart Zeit und API-Aufrufe.
 start_year <- min(YEARLY_swiss_immigration$year, na.rm = TRUE)
 end_year <- max(YEARLY_swiss_immigration$year, na.rm = TRUE)
 
@@ -173,16 +175,16 @@ if (!file.exists(world_bank_file)) {
 
 names(world_bank_raw_data)
 
-# Für die Analyse benötige ich nur die Spalten year, gdp_growth, employment_ratio und unemployment_total. Alle anderen Spalten werden entfernt.
-# - NY.GDP.MKTP.KD.ZG (gdp_growth): Unabhängige Variable
-# - SL.UEM.TOTL.ZS (unemployment_total): Kontrollvariable 1
+# Für die Analyse benötige ich nur die Spalten year, bip_wachstum und arbeitslosenquote. Alle anderen Spalten werden entfernt.
+# - NY.GDP.MKTP.KD.ZG (wird zu bip_wachstum): Unabhängige Variable
+# - SL.UEM.TOTL.ZS (wird zu arbeitslosenquote): Kontrollvariable
 
-# --- Jetzt verarbeite ich die World Bank Daten, um sie für die Analyse vorzubereiten. ---
-# 1. Wähle Spalten: country, iso3c, year + alle Indikatoren
-# 3. Benenne Indikatoren um:
-#    - NY.GDP.MKTP.KD.ZG → gdp_growth (BIP-Wachstum)
-#    - SL.UEM.TOTL.ZS → unemployment_total (Arbeitslosenquote)
-# 4. Sortiere nach Jahr
+# --- Jetzt werden die World Bank Daten für die Analyse aufbereitet. ---
+# 1. Wähle Spalten: year + alle Indikatoren
+# 2. Benenne Indikatoren um:
+#    - NY.GDP.MKTP.KD.ZG → bip_wachstum (BIP-Wachstum)
+#    - SL.UEM.TOTL.ZS → arbeitslosenquote (Arbeitslosenquote)
+# 3. Sortiere nach Jahr
 swiss_world_bank_data <- world_bank_raw_data |>
   dplyr::select(year, dplyr::all_of(indicators)) |>
   dplyr::rename(
@@ -195,7 +197,7 @@ swiss_world_bank_data <- world_bank_raw_data |>
 # KAPITEL 2C — ZUSAMMENGEFÜHRTE ANALYSEDATEN
 # ============================================================
 
-#Jetzt werden die aufbereiteten Einwanderungsdaten mit den World Bank Indikatoren zusammengeführt,
+# Jetzt werden die aufbereiteten Einwanderungsdaten mit den World Bank Indikatoren zusammengeführt,
 # um einen Datensatz zu erstellen, der alle benötigten Variablen für die Analyse enthält.
 
 ANALYSIS_swiss <- YEARLY_swiss_immigration |>
@@ -215,7 +217,7 @@ analysis_swiss <- analysedaten_schweiz
 cat("NA counts per variable:\n")
 print(colSums(is.na(ANALYSIS_swiss)))
 
-#Wir haben keine NA, was eine gute Nachricht ist.
+# Wir haben keine NA-Werte, was eine gute Nachricht ist.
 
 # ============================================================
 # KAPITEL 3 — WELTKARTE DER NETTOZUWANDERUNG
@@ -225,14 +227,14 @@ print(colSums(is.na(ANALYSIS_swiss)))
 # nach Herkunftsland auf einer geografischen Weltkarte.
 # Fokus: ausschließlich die 15 im Datensatz enthaltenen Herkunftsländer.
 
-#Zuerst müssen wir die Weltkarte laden, um die geometrischen Daten für die Länder zu erhalten.
+# Zuerst muss die Weltkarte geladen werden, um die geometrischen Daten für die Länder zu erhalten.
 # Wir verwenden Natural Earth Daten als geometrische Basis für die Karte.
 world <- rnaturalearth::ne_countries(
   scale = "medium",
   returnclass = "sf"
 )
 
-#Die Karte wird nur die 15 Herkunftsländer zeigen, die in unserem Datensatz enthalten sind.
+# Die Karte zeigt nur die 15 Herkunftsländer, die in unserem Datensatz enthalten sind.
 # Die Nettozuwanderung wird über den gesamten Zeitraum (1991–2024) pro Herkunftsland aufsummiert.
 map_data <- RAW_swiss_immigration |>
   dplyr::group_by(origin_en) |>
@@ -250,11 +252,11 @@ map_data <- RAW_swiss_immigration |>
   dplyr::filter(!is.na(iso_a3))
 
 # ------------------------------------------------------------
-# 3) Weltkarte mit Migrationsdaten verbinden
+# 3. Weltkarte mit Migrationsdaten verbinden
 # ------------------------------------------------------------
 # Hier werden Geodaten (world) mit den Migrationsdaten verknüpft.
-# Nur Länder mit Matching ISO-Code erhalten Werte.
-# Wir verwenden iso_a3_eh statt iso_a3, da einige Länder (z.B. Frankreich) in iso_a3 den Wert "-99" haben.
+# Nur Länder mit passendem ISO-Code erhalten Werte.
+# Wir verwenden iso_a3_eh statt iso_a3, da einige Länder (z. B. Frankreich) in iso_a3 den Wert "-99" haben.
 world_map <- world |>
   dplyr::mutate(
     iso_a3 = dplyr::coalesce(iso_a3_eh, iso_a3)
@@ -267,7 +269,7 @@ world_map <- world |>
   ) |>
   dplyr::left_join(map_data, by = "iso_a3")
 
-#Jetzt können wir die Karte visualisieren.
+# Jetzt kann die Karte visualisiert werden.
 swiss_migration_world_map <- ggplot2::ggplot(world_map) +
   ggplot2::geom_sf(
     ggplot2::aes(fill = net_migration),
@@ -295,11 +297,36 @@ print(swiss_migration_world_map)
 
 
 # ============================================================
-# KAPITEL 4 — ZUSAETZLICHE VISUALISIERUNGEN
+# KAPITEL 4 — ZUSÄTZLICHE VISUALISIERUNGEN
 # ============================================================
 
 # Dieses Kapitel erweitert die Analyse um weitere Darstellungen.
-# Zuerst zeigen wir die Entwicklung der Nettozuwanderung über die Zeit.
+# Zuerst wird die Entwicklung der Nettozuwanderung über die Zeit gezeigt.
+
+# Kurvendiagramm: gesamte Nettozuwanderung pro Jahr
+curve_plot <- ggplot(
+  YEARLY_swiss_immigration,
+  aes(x = year, y = net_migration)
+) +
+  geom_line(color = "#08519c", linewidth = 1) +
+  geom_point(color = "#08519c", size = 2) +
+  labs(
+    x = "Jahr",
+    y = "Nettozuwanderung",
+    title = "Nettozuwanderung in die Schweiz nach Jahr",
+    subtitle = "Gesamtwert für alle Herkunftsländer kombiniert"
+  ) +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(1990, 2025, by = 5)) +
+  scale_y_continuous(
+    labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
+  )
+
+print(curve_plot)
+
+# ============================================================
+# KAPITEL 4A — KURVENDIAGRAMM: NETTOZUWANDERUNG NACH JAHR
+# ============================================================
 
 # Kurvendiagramm: gesamte Nettozuwanderung pro Jahr
 curve_plot <- ggplot(
@@ -329,17 +356,18 @@ print(curve_plot)
 # KAPITEL 4B — BOXPLOT: NETTOZUWANDERUNG NACH VORZEICHEN
 # ============================================================
 
-#Wir nehmen wieder die Jahresdaten der Nettozuwanderung.
+# Für den Boxplot werden die Jahresdaten der Nettozuwanderung verwendet.
+
+# Zuerst erstellen wir eine neue Spalte migration_sign, die angibt, ob es sich um
+# Einwanderung (positiv) oder Auswanderung (negativ) handelt
 yearly_swiss_immigration <- yearly_swiss_immigration |>
   dplyr::mutate(
     migration_sign = ifelse(
-      net_migration > 0,
+      net_migration >= 0,
       "Einwanderung (positiv)",
       "Auswanderung (negativ)"
     )
   )
-
-count(yearly_swiss_immigration, migration_sign)
 
 #Die Farben der Boxen definieren.
 
@@ -712,8 +740,4 @@ rm(
   start_year,
   end_year,
   indicators
-)
-
-message(
-  "Workspace aufgeraeumt. Verbleibende Objekte: 5 deutschsprachige Listen und ihre englischen Aliase."
 )
