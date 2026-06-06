@@ -3,7 +3,7 @@
 # ============================================================
 
 # Benötigte Pakete laden
-required_packages <- c(
+erforderliche_pakete <- c(
   "readr",
   "dplyr",
   "stringr",
@@ -27,18 +27,18 @@ required_packages <- c(
 options(scipen = 999)
 options(repos = c(CRAN = "https://cloud.r-project.org"))
 
-missing_packages <- setdiff(required_packages, rownames(installed.packages()))
-if (length(missing_packages) > 0) {
-  install.packages(missing_packages)
+fehlende_pakete <- setdiff(erforderliche_pakete, rownames(installed.packages()))
+if (length(fehlende_pakete) > 0) {
+  install.packages(fehlende_pakete)
 }
 
-invisible(lapply(required_packages, library, character.only = TRUE))
+invisible(lapply(erforderliche_pakete, library, character.only = TRUE))
 
 # Arbeitsverzeichnisse definieren
-paths <- c("data", "tables", "figures")
-invisible(lapply(paths, function(path) {
-  if (!dir.exists(path)) {
-    dir.create(path, recursive = TRUE)
+pfade <- c("data", "tables", "figures")
+invisible(lapply(pfade, function(pfad) {
+  if (!dir.exists(pfad)) {
+    dir.create(pfad, recursive = TRUE)
   }
 }))
 
@@ -83,7 +83,7 @@ RAW_swiss_immigration <- readr::read_csv(
 
 # Jetzt werden die Daten auf Jahresbasis aggregiert, um die Nettozuwanderung pro Jahr zu erhalten.
 # Zusätzlich werden die durchschnittliche Nettozuwanderung und die Anzahl der Herkunftsländer pro Jahr berechnet.
-YEARLY_swiss_immigration <- RAW_swiss_immigration |>
+JAEHRLICHE_SCHWEIZER_EINWANDERUNG <- RAW_swiss_immigration |>
   dplyr::group_by(year) |>
   dplyr::summarize(
     net_migration = sum(net_migration, na.rm = TRUE),
@@ -93,11 +93,11 @@ YEARLY_swiss_immigration <- RAW_swiss_immigration |>
   ) |>
   dplyr::arrange(year)
 
-summary(YEARLY_swiss_immigration$net_migration)
+summary(JAEHRLICHE_SCHWEIZER_EINWANDERUNG$net_migration)
 #Summary zeigt uns, dass wir teilweise Auswanderungen haben. Das Minimum von -10589
 # zeigt, dass es Jahre gab, in denen die Schweiz insgesamt
 # mehr Auswanderungen als Einwanderungen verzeichnete (negative Nettozuwanderung).
-# Der Median (26290) liegt deutlich unter dem Mittelwert (27759), was auf
+# Der Median (26290) liegt  unter dem Mittelwert (27759), was auf
 # einzelne Jahre mit hoher Zuwanderung hindeutet.
 
 # Die deskriptive Analyse umfasst 15 europäische Herkunftsländer.
@@ -117,7 +117,7 @@ indicator_list_df <- tibble::tibble(
     "SL.UEM.TOTL.ZS"
   ),
 
-  #Und hier was für Konkrete Indikatoren es sind.
+  # Und hier die konkreten Indikatoren
   Description = c(
     "BIP-Wachstum (jährlich in %)",
     "Arbeitslosigkeit, insgesamt (% der Erwerbsbevölkerung) (modellierte ILO-Schätzung)"
@@ -133,44 +133,44 @@ indicators <- indicator_list_df$Code
 # Wenn nicht, wird die Datei erneut mit den fehlenden Indikatoren aktualisiert.
 
 # Definiere den Dateipfad
-world_bank_file <- "data/world_bank_raw.rds"
+weltbank_datei_pfad <- "data/world_bank_raw.rds"
 
 # Definiere den Zeitrahmen (min/max Jahr der Schweizer Einwanderungsdaten). Somit werden nur die Jahre abgefragt,
 # für die wir auch Einwanderungsdaten haben. Das spart Zeit und API-Aufrufe.
-start_year <- min(YEARLY_swiss_immigration$year, na.rm = TRUE)
-end_year <- max(YEARLY_swiss_immigration$year, na.rm = TRUE)
+start_jahr <- min(JAEHRLICHE_SCHWEIZER_EINWANDERUNG$year, na.rm = TRUE)
+end_jahr <- max(JAEHRLICHE_SCHWEIZER_EINWANDERUNG$year, na.rm = TRUE)
 
 # Funktion zum Laden der Daten via API
-fetch_world_bank_data <- function() {
+weltbank_daten_abrufen <- function() {
   WDI::WDI(
     country = "CHE",
     indicator = indicators,
-    start = start_year,
-    end = end_year,
+    start = start_jahr,
+    end = end_jahr,
     extra = TRUE
   )
 }
 
 # Lade oder aktualisiere die Daten
-if (!file.exists(world_bank_file)) {
+if (!file.exists(weltbank_datei_pfad)) {
   # Datei existiert nicht → API-Aufruf
-  world_bank_raw_data <- fetch_world_bank_data()
-  saveRDS(world_bank_raw_data, world_bank_file)
+  world_bank_raw_data <- weltbank_daten_abrufen()
+  saveRDS(world_bank_raw_data, weltbank_datei_pfad)
 } else {
   # Datei existiert → Prüfe auf fehlende Indikatoren
-  temp_check <- readRDS(world_bank_file)
-  missing_in_file <- setdiff(indicators, names(temp_check))
+  temp_pruefung <- readRDS(weltbank_datei_pfad)
+  fehlend_in_datei <- setdiff(indicators, names(temp_pruefung))
 
-  if (length(missing_in_file) > 0) {
+  if (length(fehlend_in_datei) > 0) {
     # Fehlende Indikatoren → API-Aufruf und Überschreiben
-    world_bank_raw_data <- fetch_world_bank_data()
-    saveRDS(world_bank_raw_data, world_bank_file)
+    world_bank_raw_data <- weltbank_daten_abrufen()
+    saveRDS(world_bank_raw_data, weltbank_datei_pfad)
   } else {
     # Alle Indikatoren vorhanden → Verwende die Datei
-    world_bank_raw_data <- temp_check
+    world_bank_raw_data <- temp_pruefung
   }
   # Bereinige temporäre Variablen
-  rm(temp_check, missing_in_file)
+  rm(temp_pruefung, fehlend_in_datei)
 }
 
 names(world_bank_raw_data)
@@ -179,13 +179,13 @@ names(world_bank_raw_data)
 # - NY.GDP.MKTP.KD.ZG (wird zu bip_wachstum): Unabhängige Variable
 # - SL.UEM.TOTL.ZS (wird zu arbeitslosenquote): Kontrollvariable
 
-# --- Jetzt werden die World Bank Daten für die Analyse aufbereitet. ---
+# --- Jetzt werden die World Bank Daten für die Analyse aufbereitet. 
 # 1. Wähle Spalten: year + alle Indikatoren
 # 2. Benenne Indikatoren um:
 #    - NY.GDP.MKTP.KD.ZG → bip_wachstum (BIP-Wachstum)
 #    - SL.UEM.TOTL.ZS → arbeitslosenquote (Arbeitslosenquote)
 # 3. Sortiere nach Jahr
-swiss_world_bank_data <- world_bank_raw_data |>
+schweizer_weltbank_daten <- world_bank_raw_data |>
   dplyr::select(year, dplyr::all_of(indicators)) |>
   dplyr::rename(
     bip_wachstum = NY.GDP.MKTP.KD.ZG,
@@ -200,22 +200,20 @@ swiss_world_bank_data <- world_bank_raw_data |>
 # Jetzt werden die aufbereiteten Einwanderungsdaten mit den World Bank Indikatoren zusammengeführt,
 # um einen Datensatz zu erstellen, der alle benötigten Variablen für die Analyse enthält.
 
-ANALYSIS_swiss <- YEARLY_swiss_immigration |>
+ANALYSE_SCHWEIZ <- JAEHRLICHE_SCHWEIZER_EINWANDERUNG |>
   dplyr::left_join(
-    swiss_world_bank_data,
+    schweizer_weltbank_daten,
     by = "year"
   ) |>
   dplyr::arrange(year)
 
-# Deutsche und lowercase Aliases für konsistenteren Stil in neuen Code-Abschnitten.
-raw_swiss_immigration <- RAW_swiss_immigration
-jahresdaten_schweizer_einwanderung <- YEARLY_swiss_immigration
-analysedaten_schweiz <- ANALYSIS_swiss
-yearly_swiss_immigration <- jahresdaten_schweizer_einwanderung
-analysis_swiss <- analysedaten_schweiz
+# Deutsche Variablen benutzen.
+rohe_schweizer_einwanderung <- RAW_swiss_immigration
+jahresdaten_schweizer_einwanderung <- JAEHRLICHE_SCHWEIZER_EINWANDERUNG
+analysedaten_schweiz <- ANALYSE_SCHWEIZ
 
 cat("NA counts per variable:\n")
-print(colSums(is.na(ANALYSIS_swiss)))
+print(colSums(is.na(ANALYSE_SCHWEIZ)))
 
 # Wir haben keine NA-Werte, was eine gute Nachricht ist.
 
@@ -229,14 +227,14 @@ print(colSums(is.na(ANALYSIS_swiss)))
 
 # Zuerst muss die Weltkarte geladen werden, um die geometrischen Daten für die Länder zu erhalten.
 # Wir verwenden Natural Earth Daten als geometrische Basis für die Karte.
-world <- rnaturalearth::ne_countries(
+welt <- rnaturalearth::ne_countries(
   scale = "medium",
   returnclass = "sf"
 )
 
 # Die Karte zeigt nur die 15 Herkunftsländer, die in unserem Datensatz enthalten sind.
 # Die Nettozuwanderung wird über den gesamten Zeitraum (1991–2024) pro Herkunftsland aufsummiert.
-map_data <- RAW_swiss_immigration |>
+karten_daten <- rohe_schweizer_einwanderung |>
   dplyr::group_by(origin_en) |>
   dplyr::summarise(
     net_migration = sum(net_migration, na.rm = TRUE),
@@ -254,10 +252,10 @@ map_data <- RAW_swiss_immigration |>
 # ------------------------------------------------------------
 # 3. Weltkarte mit Migrationsdaten verbinden
 # ------------------------------------------------------------
-# Hier werden Geodaten (world) mit den Migrationsdaten verknüpft.
+# Hier werden Geodaten (welt) mit den Migrationsdaten verknüpft.
 # Nur Länder mit passendem ISO-Code erhalten Werte.
 # Wir verwenden iso_a3_eh statt iso_a3, da einige Länder (z. B. Frankreich) in iso_a3 den Wert "-99" haben.
-world_map <- world |>
+weltkarte <- welt |>
   dplyr::mutate(
     iso_a3 = dplyr::coalesce(iso_a3_eh, iso_a3)
   ) |>
@@ -267,10 +265,10 @@ world_map <- world |>
     !is.na(iso_a3),
     iso_a3 != "-99"
   ) |>
-  dplyr::left_join(map_data, by = "iso_a3")
+  dplyr::left_join(karten_daten, by = "iso_a3")
 
 # Jetzt kann die Karte visualisiert werden.
-swiss_migration_world_map <- ggplot2::ggplot(world_map) +
+schweiz_migrations_weltkarte <- ggplot2::ggplot(weltkarte) +
   ggplot2::geom_sf(
     ggplot2::aes(fill = net_migration),
     color = "white",
@@ -293,7 +291,7 @@ swiss_migration_world_map <- ggplot2::ggplot(world_map) +
     plot.caption = ggplot2::element_text(size = 9, hjust = 0)
   )
 
-print(swiss_migration_world_map)
+print(schweiz_migrations_weltkarte)
 
 
 # ============================================================
@@ -304,8 +302,8 @@ print(swiss_migration_world_map)
 # Zuerst wird die Entwicklung der Nettozuwanderung über die Zeit gezeigt.
 
 # Kurvendiagramm: gesamte Nettozuwanderung pro Jahr
-curve_plot <- ggplot(
-  YEARLY_swiss_immigration,
+kurven_diagramm <- ggplot(
+  jahresdaten_schweizer_einwanderung,
   aes(x = year, y = net_migration)
 ) +
   geom_line(color = "#08519c", linewidth = 1) +
@@ -322,35 +320,7 @@ curve_plot <- ggplot(
     labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
   )
 
-print(curve_plot)
-
-# ============================================================
-# KAPITEL 4A — KURVENDIAGRAMM: NETTOZUWANDERUNG NACH JAHR
-# ============================================================
-
-# Kurvendiagramm: gesamte Nettozuwanderung pro Jahr
-curve_plot <- ggplot(
-  YEARLY_swiss_immigration,
-  aes(x = year, y = net_migration)
-) +
-  geom_line(color = "#08519c", linewidth = 1) +
-  geom_point(color = "#08519c", size = 2) +
-  labs(
-    x = "Jahr",
-    y = "Nettozuwanderung",
-    title = "Nettozuwanderung in die Schweiz nach Jahr",
-    subtitle = "Gesamtwert für alle Herkunftsländer kombiniert"
-  ) +
-  theme_minimal() +
-  scale_x_continuous(breaks = seq(1990, 2025, by = 5)) +
-  scale_y_continuous(
-    labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
-  )
-
-print(curve_plot)
-
-# Das Kurvendiagramm zeigt die Entwicklung der Nettozuwanderung von 1991 bis 2024.
-# Es ist kein Kartenplot, sondern ein Zeitverlauf mit Jahreswerten.
+print(kurven_diagramm)
 
 # ============================================================
 # KAPITEL 4B — BOXPLOT: NETTOZUWANDERUNG NACH VORZEICHEN
@@ -360,7 +330,7 @@ print(curve_plot)
 
 # Zuerst erstellen wir eine neue Spalte migration_sign, die angibt, ob es sich um
 # Einwanderung (positiv) oder Auswanderung (negativ) handelt
-yearly_swiss_immigration <- yearly_swiss_immigration |>
+jahresdaten_mit_vorzeichen <- jahresdaten_schweizer_einwanderung |>
   dplyr::mutate(
     migration_sign = ifelse(
       net_migration >= 0,
@@ -369,10 +339,10 @@ yearly_swiss_immigration <- yearly_swiss_immigration |>
     )
   )
 
-#Die Farben der Boxen definieren.
+# Die Farben der Boxen definieren.
 
-boxplot_sign <- ggplot(
-  yearly_swiss_immigration,
+boxplot_vorzeichen <- ggplot(
+  jahresdaten_mit_vorzeichen,
   aes(x = migration_sign, y = net_migration, fill = migration_sign)
 ) +
   geom_boxplot() +
@@ -394,7 +364,7 @@ boxplot_sign <- ggplot(
     labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
   )
 
-print(boxplot_sign)
+print(boxplot_vorzeichen)
 
 # Die Streuung der Nettozuwanderung ist in den positiven Jahren deutlich grösser.
 
@@ -403,10 +373,10 @@ print(boxplot_sign)
 # ============================================================
 
 # Hier summieren wir die Nettozuwanderung pro Herkunftsland über den gesamten Zeitraum.
-# Danach erstellen wir ein horizontales Balkendiagramm zum Vergleich der Laender.
+# Danach erstellen wir ein horizontales Balkendiagramm zum Vergleich der Länder.
 
-#Pro Land summieren.
-country_totals <- raw_swiss_immigration |>
+# Pro Land summieren.
+laender_gesamt <- rohe_schweizer_einwanderung |>
   dplyr::group_by(origin_en) |>
   dplyr::summarise(
     total_net_migration = sum(net_migration, na.rm = TRUE),
@@ -414,15 +384,15 @@ country_totals <- raw_swiss_immigration |>
   ) |>
   dplyr::arrange(desc(total_net_migration))
 
-country_totals
+laender_gesamt
 
-#Hier sehen wir die Gesamt Nettozuwanderung pro Herkunftsland über den gesamten Zeitraum.
-#Bei Spanien ist die Nettozuwanderung sogar negativ, was bedeutet, dass mehr Menschen aus
+# Hier sehen wir die Gesamt Nettozuwanderung pro Herkunftsland über den gesamten Zeitraum.
+# Bei Spanien ist die Nettozuwanderung sogar negativ, was bedeutet, dass mehr Menschen aus
 # Spanien in die Schweiz ausgewandert sind als umgekehrt.
-# Eine möglich Erklärung könnten sein, dass Spanier in der Schweiz arbeiten, aber dann wieder zurück in die Heimat ziehen,
+# Eine mögliche Erklärung könnte sein, dass Spanier in der Schweiz arbeiten, aber dann wieder zurück in die Heimat ziehen,
 # wenn sie in Rente gehen.
-horizontal_bar_plot <- ggplot(
-  country_totals,
+horizontales_balkendiagramm <- ggplot(
+  laender_gesamt,
   aes(x = total_net_migration, y = reorder(origin_en, total_net_migration))
 ) +
   geom_col(fill = "#08519c", color = "white", linewidth = 0.2) +
@@ -437,43 +407,43 @@ horizontal_bar_plot <- ggplot(
     labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
   )
 
-#Plot zeigen
-print(horizontal_bar_plot)
+# Plot zeigen
+print(horizontales_balkendiagramm)
 
 
 # ============================================================
-# KAPITEL 4D — All Plots speichern
+# KAPITEL 4D — Alle Plots speichern
 # ============================================================
 
-#Jetzt können wir noch alle erstellten Plots als PNG Dateien speichern.
+# Jetzt können wir noch alle erstellten Plots als PNG Dateien speichern.
 
 ggplot2::ggsave(
-  filename = file.path("figures", "swiss_migration_world_map.png"),
-  plot = swiss_migration_world_map,
+  filename = file.path("figures", "schweiz_migrations_weltkarte.png"),
+  plot = schweiz_migrations_weltkarte,
   width = 10,
   height = 6,
   dpi = 300
 )
 
 ggplot2::ggsave(
-  filename = file.path("figures", "curve_plot.png"),
-  plot = curve_plot,
+  filename = file.path("figures", "kurven_diagramm.png"),
+  plot = kurven_diagramm,
   width = 10,
   height = 6,
   dpi = 300
 )
 
 ggplot2::ggsave(
-  filename = file.path("figures", "boxplot_sign.png"),
-  plot = boxplot_sign,
+  filename = file.path("figures", "boxplot_vorzeichen.png"),
+  plot = boxplot_vorzeichen,
   width = 10,
   height = 6,
   dpi = 300
 )
 
 ggplot2::ggsave(
-  filename = file.path("figures", "horizontal_bar_plot.png"),
-  plot = horizontal_bar_plot,
+  filename = file.path("figures", "horizontales_balkendiagramm.png"),
+  plot = horizontales_balkendiagramm,
   width = 10,
   height = 6,
   dpi = 300
@@ -484,39 +454,37 @@ ggplot2::ggsave(
 # KAPITEL 5 — REGRESSIONSMODELLE (JAEHRLICHE DATEN)
 # ============================================================
 
-#Jetzt können wir eine Regressionsanalyse durchführen, um den Zusammenhang zwischen BIP-Wachstum, Arbeitslosenquote und Nettozuwanderung zu untersuchen.
-#Modell 1 hat nur das BIP-Wachstum als unabhängige Variable, während Modell 2 zusätzlich die Arbeitslosenquote als Kontrollvariable enthält.
-#Die Abhänige Variable in beiden Modellen ist die Nettozuwanderung, die wir bereits auf Jahresbasis aggregiert haben.
+# Jetzt können wir eine Regressionsanalyse durchführen, um den Zusammenhang zwischen BIP-Wachstum, Arbeitslosenquote und Nettozuwanderung zu untersuchen.
+# Modell 1 hat nur das BIP-Wachstum als unabhängige Variable, während Modell 2 zusätzlich die Arbeitslosenquote als Kontrollvariable enthält.
+# Die abhängige Variable in beiden Modellen ist die Nettozuwanderung, die wir bereits auf Jahresbasis aggregiert haben.
 
 # Schritt 1: Nur die relevanten Variablen für die Regression auswählen.
 regressionsdaten <- analysedaten_schweiz |>
   dplyr::select(net_migration, bip_wachstum, arbeitslosenquote)
 
-regression_data <- regressionsdaten
-
 # Als Sicherheit speichern wir die Regressionsdaten auch als CSV Datei.
 
-readr::write_csv(regression_data, "data/regression_data.csv")
+readr::write_csv(regressionsdaten, "data/regressionsdaten.csv")
 
-#Jetzt Modell 1 schaetzen.
-model_1_bip <- lm(net_migration ~ bip_wachstum, data = regression_data)
+# Jetzt Modell 1 schätzen.
+modell_1_bip <- lm(net_migration ~ bip_wachstum, data = regressionsdaten)
 
-#Und jetzt Modell 2 mit der Kontrollvariable Arbeitslosenquote.
-model_2_bip_arbeitslos <- lm(
+# Und jetzt Modell 2 mit der Kontrollvariable Arbeitslosenquote.
+modell_2_bip_arbeitslosenquote <- lm(
   net_migration ~ bip_wachstum + arbeitslosenquote,
-  data = regression_data
+  data = regressionsdaten
 )
 
 # Schritt 5: Summaries direkt in der Konsole anzeigen.
-summary(model_1_bip)
-summary(model_2_bip_arbeitslos)
+summary(modell_1_bip)
+summary(modell_2_bip_arbeitslosenquote)
 
 
 #Hier sieht es besser aus, wenn wir es als Tabelle darstellen, damit wir die Ergebnisse besser vergleichen können.
 #Wir benutzen dafür texreg.
 
 texreg::screenreg(
-  list(Modell_1 = model_1_bip, Modell_2 = model_2_bip_arbeitslos),
+  list(Modell_1 = modell_1_bip, Modell_2 = modell_2_bip_arbeitslosenquote),
   custom.model.names = c("Modell 1", "Modell 2"),
   custom.coef.names = c("(Intercept)", "BIP-Wachstum", "Arbeitslosenquote"),
   custom.dep.var = "Nettozuwanderung",
@@ -528,8 +496,8 @@ texreg::screenreg(
 
 # Export als HTML-Datei.
 texreg::htmlreg(
-  list(Modell_1 = model_1_bip, Modell_2 = model_2_bip_arbeitslos),
-  file = file.path("tables", "regression_texreg.html"),
+  list(Modell_1 = modell_1_bip, Modell_2 = modell_2_bip_arbeitslosenquote),
+  file = file.path("tables", "regressionsergebnisse_texreg.html"),
   custom.model.names = c("Modell 1", "Modell 2"),
   custom.coef.names = c("(Intercept)", "BIP-Wachstum", "Arbeitslosenquote"),
   custom.dep.var = "Nettozuwanderung",
@@ -563,10 +531,10 @@ texreg::htmlreg(
 # geschätzte Nettozuwanderung -18'119 Personen. Der Wert ist nicht signifikant.
 # Das Modell erklärt 21.4 % der Variation der Nettozuwanderung (R² = 0.214).
 
-#Den positiven Effekt der Arbeitslosigkeit auf die Nettozuwanderung deutet dazu, dass der Modelle
-#nicht alle relevanten Faktoren erfasst, die die Nettozuwanderung beeinflussen. Die Nettozuandwerung ist
-#auch stark von anderen Faktoten, wie zB die Freizugkeitens Abkommen, die EU Mitgliedschaft, die Arbeitsmarktsituation
-# in den Herkunftsländern etc beeinflusst.
+# Den positiven Effekt der Arbeitslosigkeit auf die Nettozuwanderung deutet darauf hin, dass das Modell
+# nicht alle relevanten Faktoren erfasst, die die Nettozuwanderung beeinflussen. Die Nettozuwanderung ist
+# auch stark von anderen Faktoren beeinflusst, wie z. B. das Freizügigkeitsabkommen, die EU-Mitgliedschaft, die Arbeitsmarktsituation
+# in den Herkunftsländern etc.
 
 # ============================================================
 # KAPITEL 6 — DIAGNOSTISCHE TESTS UND RESIDUALANALYSE
@@ -579,11 +547,11 @@ texreg::htmlreg(
 
 # Schritt 1: Korrelationsmatrix zwischen Nettozuwanderung, BIP-Wachstum und Arbeitslosenquote.
 # Das zeigt, ob die Prädiktoren stark miteinander korrelieren.
-correlation_matrix <- regression_data |>
+korrelationsmatrix <- regressionsdaten |>
   cor()
 
 # Korrelationsmatrix anzeigen.
-correlation_matrix
+korrelationsmatrix
 
 # Ein Korrelationswert von r = 0.238 zwischen den Prädiktoren spricht für eine schwache Korrelation.
 # Das deutet auf kein starkes Multikollinearitätsproblem hin.
@@ -594,30 +562,30 @@ correlation_matrix
 # weitere Einflussfaktoren von selbst wachsen würde.
 
 # ACF der Residuen berechnen
-acf_obj <- stats::acf(
-  residuals(model_2_bip_arbeitslos), # Residuen des Modells
+acf_objekt <- stats::acf(
+  residuals(modell_2_bip_arbeitslosenquote), # Residuen des Modells
   plot = FALSE, # kein Plot erstellen
   na.action = na.pass # NA-Werte nicht entfernen
 )
 
 # Ergebnisse in eine übersichtliche Tabelle umwandeln
-autocorrelation_df <- tibble::tibble(
-  lag = as.numeric(acf_obj$lag), # Zeitverzögerung (Lag)
-  acf = as.numeric(acf_obj$acf) # Autokorrelationswert
+autokorrelations_daten <- tibble::tibble(
+  lag = as.numeric(acf_objekt$lag), # Zeitverzögerung (Lag)
+  acf = as.numeric(acf_objekt$acf) # Autokorrelationswert
 ) |>
   dplyr::filter(lag > 0) # Lag 0 entfernen (immer 1, nicht informativ)
 
 # Anzahl der Beobachtungen berechnen
-n_obs <- length(stats::na.omit(residuals(model_2_bip_arbeitslos)))
+n_beobachtungen <- length(stats::na.omit(residuals(modell_2_bip_arbeitslosenquote)))
 
 # 95%-Konfidenzgrenze
-conf_limit <- 1.96 / sqrt(n_obs)
+konfidenzgrenze <- 1.96 / sqrt(n_beobachtungen)
 
 # Tabelle ausgeben
-autocorrelation_df
+autokorrelations_daten
 
 # Konfidenzgrenzen separat anzeigen
-conf_limit
+konfidenzgrenze
 
 # Interpretation der ACF-Ergebnisse:
 # Ein "Lag" beschreibt die zeitliche Verschiebung zwischen Beobachtungen.
@@ -629,8 +597,8 @@ conf_limit
 # Das bedeutet, dass die Residuen zeitlich abhängig sind und nicht zufällig schwanken.
 #
 # Konsequenz:
-# Das Modell wird auch von einer zeiutliche Dynmaik beiinflusst, die nicht durch die Prädiktoren erfasst wird.
-# as könnte die Schätzung der Effekte verzerren.
+# Das Modell wird auch von einer zeitlichen Dynamik beeinflusst, die nicht durch die Prädiktoren erfasst wird.
+# Das könnte die Schätzung der Effekte verzerren.
 
 # ============================================================
 # KAPITEL 7 — OBJEKTE IN LISTEN ZUSAMMENFASSEN
@@ -639,54 +607,39 @@ conf_limit
 # Wir fassen die wichtigsten Objekte in einfachen Listen zusammen.
 # Das macht das Projekt leichter zu überblicken und später leichter exportierbar.
 
-zeitreihe_schweizer_einwanderung <- yearly_swiss_immigration
-zeitreihe_schweizer_einwanderung_mit_vorzeichen <- yearly_swiss_immigration
-analyse_daten_schweiz <- analysedaten_schweiz
-regressions_daten <- regressionsdaten
-indikatoren_tabelle <- indicator_list_df
-schweizer_worldbank_daten <- swiss_world_bank_data
-laender_summen <- country_totals
-autokorrelations_tabelle <- autocorrelation_df
+# Alle wichtigen Variablen sind bereits in Deutsch vorhanden
 
 # Deutsche Listen-Namen.
 daten_objekte <- list(
-  rohe_schweizer_einwanderung = raw_swiss_immigration,
-  zeitreihe_schweizer_einwanderung = zeitreihe_schweizer_einwanderung,
-  zeitreihe_schweizer_einwanderung_mit_vorzeichen = zeitreihe_schweizer_einwanderung_mit_vorzeichen,
-  analyse_daten_schweiz = analyse_daten_schweiz,
-  regressions_daten = regressions_daten,
-  indikatoren_tabelle = indikatoren_tabelle,
-  schweizer_worldbank_daten = schweizer_worldbank_daten,
-  weltkarten_daten = map_data,
-  laender_summen = laender_summen,
-  autokorrelations_tabelle = autokorrelations_tabelle
+  rohe_schweizer_einwanderung = rohe_schweizer_einwanderung,
+  jahresdaten_schweizer_einwanderung = jahresdaten_schweizer_einwanderung,
+  analysedaten_schweiz = analysedaten_schweiz,
+  regressionsdaten = regressionsdaten,
+  indikatoren_tabelle = indicator_list_df,
+  schweizer_weltbank_daten = schweizer_weltbank_daten,
+  weltkarten_daten = karten_daten,
+  laender_summen = laender_gesamt,
+  autokorrelations_tabelle = autokorrelations_daten
 )
 
 matrix_objekte <- list(
-  korrelationsmatrix = correlation_matrix,
-  acf_objekt = acf_obj,
-  konfidenzgrenze = conf_limit,
-  beobachtungen = n_obs
+  korrelationsmatrix = korrelationsmatrix,
+  acf_objekt = acf_objekt,
+  konfidenzgrenze = konfidenzgrenze,
+  beobachtungen = n_beobachtungen
 )
 
 modell_objekte <- list(
-  modell_1_bip = model_1_bip,
-  modell_2_bip_arbeitslos = model_2_bip_arbeitslos
+  modell_1_bip = modell_1_bip,
+  modell_2_bip_arbeitslosenquote = modell_2_bip_arbeitslosenquote
 )
 
 plot_objekte <- list(
-  weltkarte_migration = swiss_migration_world_map,
-  verlaufslinie = curve_plot,
-  boxplot_vorzeichen = boxplot_sign,
-  balkendiagramm_laender = horizontal_bar_plot
+  weltkarte_migration = schweiz_migrations_weltkarte,
+  verlaufslinie = kurven_diagramm,
+  boxplot_vorzeichen = boxplot_vorzeichen,
+  balkendiagramm_laender = horizontales_balkendiagramm
 )
-
-# Kompatibilitäts-Aliase für den bisherigen englischen Stil.
-data_objects <- daten_objekte
-matrix_objects <- matrix_objekte
-model_objects <- modell_objekte
-plot_objects <- plot_objekte
-
 
 # Die Listen kurz in der Konsole anzeigen.
 daten_objekte
@@ -694,50 +647,41 @@ matrix_objekte
 modell_objekte
 plot_objekte
 
-# Aufraeum: Losche alle einzelnen Objekte, die jetzt in den Listen organisiert sind.
+# Aufräumen: Lösche alle einzelnen Objekte, die jetzt in den Listen organisiert sind.
 #
 rm(
-  raw_swiss_immigration,
-  jahresdaten_schweizer_einwanderung,
-  analysedaten_schweiz,
-  yearly_swiss_immigration,
-  analysis_swiss,
-  yearly_swiss_immigration,
-  regression_data,
-  regressionsdaten,
+  RAW_swiss_immigration,
+  JAEHRLICHE_SCHWEIZER_EINWANDERUNG,
+  ANALYSE_SCHWEIZ,
+  welt,
+  world_bank_raw_data,
   indicator_list_df,
-  indikatoren_tabelle,
-  swiss_world_bank_data,
-  schweizer_worldbank_daten,
-  map_data,
-  country_totals,
-  laender_summen,
-  world,
-  world_map,
-  immigration_context_reasons,
-  immigration_context_table,
-  kontext_daten_einwanderung,
-  kontext_gruende_einwanderung,
-  kontext_tabelle_einwanderung,
-  autocorrelation_df,
-  autokorrelations_tabelle,
-  correlation_matrix,
-  acf_obj,
-  conf_limit,
-  n_obs,
-  model_1_bip,
-  model_2_bip_arbeitslos,
-  swiss_migration_world_map,
-  curve_plot,
-  boxplot_sign,
-  horizontal_bar_plot,
-  zeitreihe_schweizer_einwanderung,
-  zeitreihe_schweizer_einwanderung_mit_vorzeichen,
-  analyse_daten_schweiz,
-  regressions_daten,
-  world_bank_file,
-  fetch_world_bank_data,
-  start_year,
-  end_year,
-  indicators
+  indicators,
+  erforderliche_pakete,
+  fehlende_pakete,
+  pfade,
+  weltbank_datei_pfad,
+  start_jahr,
+  end_jahr,
+  weltbank_daten_abrufen,
+  schweizer_weltbank_daten,
+  karten_daten,
+  weltkarte,
+  jahresdaten_schweizer_einwanderung,
+  rohe_schweizer_einwanderung,
+  analysedaten_schweiz,
+  regressionsdaten,
+  modell_1_bip,
+  modell_2_bip_arbeitslosenquote,
+  schweiz_migrations_weltkarte,
+  kurven_diagramm,
+  boxplot_vorzeichen,
+  horizontales_balkendiagramm,
+  laender_gesamt,
+  jahresdaten_mit_vorzeichen,
+  korrelationsmatrix,
+  acf_objekt,
+  konfidenzgrenze,
+  n_beobachtungen,
+  autokorrelations_daten
 )
