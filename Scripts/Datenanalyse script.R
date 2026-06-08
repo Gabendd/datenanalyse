@@ -14,7 +14,6 @@ erforderliche_pakete <- c(
   "countrycode",
   "huxtable",
   "scales",
-  "data.table",
   "sf",
   "tibble",
   "broom",
@@ -36,7 +35,7 @@ if (length(fehlende_pakete) > 0) {
 invisible(lapply(erforderliche_pakete, library, character.only = TRUE))
 
 # Arbeitsverzeichnisse definieren
-pfade <- c("tables", "figures")
+pfade <- c("tabellen", "grafiken")
 invisible(lapply(pfade, function(pfad) {
   if (!dir.exists(pfad)) {
     dir.create(pfad, recursive = TRUE)
@@ -54,7 +53,7 @@ invisible(lapply(pfade, function(pfad) {
 
 # Hier werden die Einwanderungsdaten importiert, die Spalten in die richtigen Formate umgewandelt und nur die relevanten
 # Herkunftsländer und Zeilen behalten. Danach werden die Daten nach Herkunftsland und Jahr sortiert. Nur die relevanten
-# Variablen (herkunft, jahr, netto_migration) werden behalten. Zudem werden die Zeilen mit aggregierten Regionen (z. B. "Afrique",
+# Variablen (herkunft, jahr, netto_zuwanderung) werden behalten. Zudem werden die Zeilen mit aggregierten Regionen (z. B. "Afrique",
 # "Amérique", "Asie", "Océanie") sowie die Zeilen mit nicht-informativem Text (z. B. "Renseignements|Source|© OFS") herausgefiltert.
 
 # Immigrationsdaten einlesen, bereinigen und filtern
@@ -64,7 +63,7 @@ rohe_schweizer_einwanderung <- readr::read_csv(
 ) |>
   dplyr::mutate(
     jahr = as.integer(year),
-    netto_migration = as.numeric(net_migration)
+    netto_zuwanderung = as.numeric(net_migration)
   ) |>
   dplyr::rename(herkunft = origin_en) |>
   dplyr::filter(
@@ -80,19 +79,19 @@ rohe_schweizer_einwanderung <- readr::read_csv(
       ),
     !stringr::str_detect(herkunft, "Renseignements|Source|© OFS")
   ) |>
-  dplyr::select(herkunft, jahr, netto_migration) |>
+  dplyr::select(herkunft, jahr, netto_zuwanderung) |>
   dplyr::arrange(herkunft, jahr)
 
 # Jetzt werden die Daten auf Jahresbasis aggregiert, um die Nettozuwanderung pro Jahr zu erhalten.
 jahresdaten_schweizer_einwanderung <- rohe_schweizer_einwanderung |>
   dplyr::group_by(jahr) |>
   dplyr::summarize(
-    netto_migration = sum(netto_migration, na.rm = TRUE),
+    netto_zuwanderung = sum(netto_zuwanderung, na.rm = TRUE),
     .groups = "drop"
   ) |>
   dplyr::arrange(jahr)
 
-summary(jahresdaten_schweizer_einwanderung$netto_migration)
+summary(jahresdaten_schweizer_einwanderung$netto_zuwanderung)
 #Summary zeigt uns, dass wir teilweise Auswanderungen haben. Das Minimum von -10589
 # zeigt, dass es Jahre gab, in denen die Schweiz insgesamt
 # mehr Auswanderungen als Einwanderungen verzeichnete (negative Nettozuwanderung).
@@ -229,7 +228,7 @@ welt <- rnaturalearth::ne_countries(
 karten_daten <- rohe_schweizer_einwanderung |>
   dplyr::group_by(herkunft) |>
   dplyr::summarise(
-    netto_migration = sum(netto_migration, na.rm = TRUE),
+    netto_zuwanderung = sum(netto_zuwanderung, na.rm = TRUE),
     .groups = "drop"
   ) |>
   dplyr::mutate(
@@ -265,7 +264,7 @@ weltkarte <- welt |>
 # Jetzt kann die Karte visualisiert werden.
 schweiz_migrations_weltkarte <- ggplot2::ggplot(weltkarte) +
   ggplot2::geom_sf(
-    ggplot2::aes(fill = netto_migration),
+    ggplot2::aes(fill = netto_zuwanderung),
     color = "white",
     linewidth = 0.2
   ) +
@@ -299,7 +298,7 @@ print(schweiz_migrations_weltkarte)
 # Kurvendiagramm: gesamte Nettozuwanderung pro Jahr
 kurven_diagramm <- ggplot(
   jahresdaten_schweizer_einwanderung,
-  aes(x = jahr, y = netto_migration)
+  aes(x = jahr, y = netto_zuwanderung)
 ) +
   geom_line(color = "#08519c", linewidth = 1) +
   geom_point(color = "#08519c", size = 2) +
@@ -340,7 +339,7 @@ print(kurven_diagramm)
 jahresdaten_mit_vorzeichen <- jahresdaten_schweizer_einwanderung |>
   dplyr::mutate(
     migration_sign = ifelse(
-      netto_migration >= 0,
+      netto_zuwanderung >= 0,
       "Einwanderung (positiv)",
       "Auswanderung (negativ)"
     )
@@ -350,7 +349,7 @@ jahresdaten_mit_vorzeichen <- jahresdaten_schweizer_einwanderung |>
 
 boxplot_vorzeichen <- ggplot(
   jahresdaten_mit_vorzeichen,
-  aes(x = migration_sign, y = netto_migration, fill = migration_sign)
+  aes(x = migration_sign, y = netto_zuwanderung, fill = migration_sign)
 ) +
   geom_boxplot() +
   scale_fill_manual(
@@ -373,27 +372,25 @@ boxplot_vorzeichen <- ggplot(
 
 print(boxplot_vorzeichen)
 
-
-# Wir sehen dass die Streuung der Nettozuwanderung in den positiven Jahren deutlich grösser ist.
-# Die Schweizer Migration wird von wenigen Jahren mit extrem hoher
-# Einwanderung dominiert , während Auswanderungsjahre selten sind.
-# und moderate, stabile Verluste aufweisen. Dies erklärt die Asymmetrie im Boxplot.
-
-# Statistische Zusammenfassung für präzise Interpretation
-summary_stats <- jahresdaten_mit_vorzeichen |>
+zusammenfassung <- jahresdaten_mit_vorzeichen |>
   dplyr::group_by(migration_sign) |>
   dplyr::summarize(
-    count = n(),
-    mean = mean(netto_migration),
-    median = median(netto_migration),
-    sd = sd(netto_migration),
-    min = min(netto_migration),
-    max = max(netto_migration),
-    iqr = IQR(netto_migration)
+    anzahl = n(),
+    mittelwert = mean(netto_zuwanderung),
+    median = median(netto_zuwanderung),
+    sd = sd(netto_zuwanderung),
+    min = min(netto_zuwanderung),
+    max = max(netto_zuwanderung),
+    iqr = IQR(netto_zuwanderung)
   )
-
-print(summary_stats)
-
+print(zusammenfassung)
+# Wir sehen, dass die Streuung der Nettozuwanderung in den positiven Jahren deutlich grösser ist.
+# Die Schweizer Migration wird von wenigen Jahren mit extrem hoher
+# Einwanderung dominiert, was man an den hohen SD-Werten ablesen kann:
+# Sie liegt bei 17'609, während die SD bei den negativen Jahren nur 3'616 beträgt.
+# Abwanderungsjahre sind selten und weisen moderate, stabile Verluste auf.
+# Das kann man auch am Anteil der Abwanderungsjahre in der Zusammenfassung sehen:
+# Es gibt nur 4 Jahre mit negativer Nettozuwanderung, aber 30 Jahre mit positiver Nettozuwanderung.
 
 # ============================================================
 # KAPITEL 4C — HORIZONTALES BALKENDIAGRAMM: NETTOZUWANDERUNG PRO HERKUNFTSLAND
@@ -406,21 +403,31 @@ print(summary_stats)
 laender_gesamt <- rohe_schweizer_einwanderung |>
   dplyr::group_by(herkunft) |>
   dplyr::summarise(
-    gesamt_netto_migration = sum(netto_migration, na.rm = TRUE),
+    gesamt_netto_zuwanderung = sum(netto_zuwanderung, na.rm = TRUE),
     .groups = "drop"
   ) |>
-  dplyr::arrange(desc(gesamt_netto_migration))
+  dplyr::arrange(desc(gesamt_netto_zuwanderung))
 
 laender_gesamt
 
-# Hier sehen wir die Gesamt Nettozuwanderung pro Herkunftsland über den gesamten Zeitraum.
+# Hier sehen wir die Gesamt-Nettozuwanderung pro Herkunftsland über den gesamten Zeitraum.
 # Bei Spanien ist die Nettozuwanderung sogar negativ, was bedeutet, dass mehr Menschen aus
-# Spanien in die Schweiz ausgewandert sind als umgekehrt.
-# Eine mögliche Erklärung könnte sein, dass Spanier in der Schweiz arbeiten, aber dann wieder zurück in die Heimat ziehen,
-# wenn sie in Rente gehen.
+# der Schweiz nach Spanien ausgewandert sind als umgekehrt.
+# Eine mögliche Erklärung könnte sein, dass Spanier in der Schweiz arbeiten, aber nach der
+# Pensionierung wieder in ihre Heimat zurückziehen.
+# Die zwei wichtigsten Nachbarn, Deutschland und Frankreich, liegen mit Abstand auf Platz 1
+# und 2 bei den meisten Einwanderungen.
+# Erstaunlich ist, dass Portugal mehr Einwanderer als Italien aufweist.
+# Das könnte auch mit den Grenzgängern aus Italien zusammenhängen, die in der Schweiz arbeiten,
+# aber in Italien wohnen, und nicht in diesen Zahlen erfasst werden,
+# da sie ihren Wohnsitz in Italien behalten und nicht als Einwanderer gezählt werden.
+
 horizontales_balkendiagramm <- ggplot(
   laender_gesamt,
-  aes(x = gesamt_netto_migration, y = reorder(herkunft, gesamt_netto_migration))
+  aes(
+    x = gesamt_netto_zuwanderung,
+    y = reorder(herkunft, gesamt_netto_zuwanderung)
+  )
 ) +
   geom_col(fill = "#08519c", color = "white", linewidth = 0.2) +
   labs(
@@ -439,13 +446,14 @@ print(horizontales_balkendiagramm)
 
 
 # ============================================================
-# KAPITEL 4D — Alle Plots speichern
+# KAPITEL 4D — Alle Grafiken speichern
 # ============================================================
 
-# Jetzt können wir noch alle erstellten Plots als PNG Dateien speichern.
+# Jetzt können wir noch alle erstellten Grafiken als PNG Dateien speichern une exportieren.
+# Alle Grafiken werden in einem Unterordner "grafiken" gespeichert.
 
 ggplot2::ggsave(
-  filename = file.path("figures", "schweiz_migrations_weltkarte.png"),
+  filename = file.path("grafiken", "schweiz_migrations_weltkarte.png"),
   plot = schweiz_migrations_weltkarte,
   width = 10,
   height = 6,
@@ -453,7 +461,7 @@ ggplot2::ggsave(
 )
 
 ggplot2::ggsave(
-  filename = file.path("figures", "kurven_diagramm.png"),
+  filename = file.path("grafiken", "kurven_diagramm.png"),
   plot = kurven_diagramm,
   width = 10,
   height = 6,
@@ -461,7 +469,7 @@ ggplot2::ggsave(
 )
 
 ggplot2::ggsave(
-  filename = file.path("figures", "boxplot_vorzeichen.png"),
+  filename = file.path("grafiken", "boxplot_vorzeichen.png"),
   plot = boxplot_vorzeichen,
   width = 10,
   height = 6,
@@ -469,7 +477,7 @@ ggplot2::ggsave(
 )
 
 ggplot2::ggsave(
-  filename = file.path("figures", "horizontales_balkendiagramm.png"),
+  filename = file.path("grafiken", "horizontales_balkendiagramm.png"),
   plot = horizontales_balkendiagramm,
   width = 10,
   height = 6,
@@ -485,24 +493,24 @@ ggplot2::ggsave(
 # Modell 1 hat nur das BIP-Wachstum als unabhängige Variable, während Modell 2 zusätzlich die Arbeitslosenquote als Kontrollvariable enthält.
 # Die abhängige Variable in beiden Modellen ist die Nettozuwanderung, die wir bereits auf Jahresbasis aggregiert haben.
 
-# Schritt 1: Nur die relevanten Variablen für die Regression auswählen.
+#Zuerst, nur die relevanten Variablen für die Regression auswählen.
 regressionsdaten <- analysedaten_schweiz |>
-  dplyr::select(netto_migration, bip_wachstum, arbeitslosenquote)
+  dplyr::select(netto_zuwanderung, bip_wachstum, arbeitslosenquote)
 
 # Als Sicherheit speichern wir die Regressionsdaten auch als CSV Datei.
 
 readr::write_csv(regressionsdaten, "data/regressionsdaten.csv")
 
 # Jetzt Modell 1 schätzen.
-modell_1_bip <- lm(netto_migration ~ bip_wachstum, data = regressionsdaten)
+modell_1_bip <- lm(netto_zuwanderung ~ bip_wachstum, data = regressionsdaten)
 
 # Und jetzt Modell 2 mit der Kontrollvariable Arbeitslosenquote.
 modell_2_bip_arbeitslosenquote <- lm(
-  netto_migration ~ bip_wachstum + arbeitslosenquote,
+  netto_zuwanderung ~ bip_wachstum + arbeitslosenquote,
   data = regressionsdaten
 )
 
-# Schritt 5: Summaries direkt in der Konsole anzeigen.
+#Summaries direkt in der Konsole anzeigen.
 summary(modell_1_bip)
 summary(modell_2_bip_arbeitslosenquote)
 
@@ -515,6 +523,7 @@ texreg::screenreg(
   custom.model.names = c("Modell 1", "Modell 2"),
   custom.coef.names = c("(Intercept)", "BIP-Wachstum", "Arbeitslosenquote"),
   custom.dep.var = "Nettozuwanderung",
+  custom.note = "Abhängige Variable: Nettozuwanderung. Unabhängige Variablen: BIP-Wachstum (Modell 1+2), Arbeitslosenquote (Modell 2). Signifikanz: * p < 0.05, ** p < 0.01, *** p < 0.001",
   digits = 5,
   single.row = FALSE,
   include.f = TRUE,
@@ -524,10 +533,11 @@ texreg::screenreg(
 # Export als HTML-Datei.
 texreg::htmlreg(
   list(Modell_1 = modell_1_bip, Modell_2 = modell_2_bip_arbeitslosenquote),
-  file = file.path("tables", "regressionsergebnisse_texreg.html"),
+  file = file.path("tabellen", "regressionsergebnisse_texreg.html"),
   custom.model.names = c("Modell 1", "Modell 2"),
   custom.coef.names = c("(Intercept)", "BIP-Wachstum", "Arbeitslosenquote"),
   custom.dep.var = "Nettozuwanderung",
+  custom.note = "Abhängige Variable: Nettozuwanderung. Unabhängige Variablen: BIP-Wachstum (Modell 1+2), Arbeitslosenquote (Modell 2). Signifikanz: * p < 0.05, ** p < 0.01, *** p < 0.001",
   digits = 5,
   single.row = FALSE,
   include.f = TRUE,
@@ -541,19 +551,20 @@ texreg::htmlreg(
 # Modell 1:
 # Ein Anstieg des BIP-Wachstums um 1 Prozentpunkt ist mit einer um
 # durchschnittlich 1'163 Personen höheren Nettozuwanderung verbunden.
-# Dieser Effekt ist statistisch nicht signifikant (p > 0.1).
+# Dieser Effekt ist statistisch nicht signifikant (p > 0.05).
 # Das Modell erklärt nur 0.9 % der Variation der Nettozuwanderung (R² = 0.009).
 # Konstante: Bei einem BIP-Wachstum von 0 % beträgt die geschätzte
-# Nettozuwanderung 25'865 Personen. Der Wert ist statistisch signifikant (p < 0.05).
+# Nettozuwanderung 25'865 Personen. Der Wert ist statistisch signifikant (p < 0.001).
 
 # Modell 2:
 # Unter Kontrolle der Arbeitslosenquote ist ein zusätzlicher Prozentpunkt
 # BIP-Wachstum mit 187 Personen weniger Nettozuwanderung verbunden.
-# Dieser Effekt ist nicht statistisch signifikant (p > 0.1).
+# Dieser Effekt ist nicht statistisch signifikant (p > 0.05).
 
 # Ein Anstieg der Arbeitslosenquote um 1 Prozentpunkt ist mit einer um
 # durchschnittlich 11'709 Personen höheren Nettozuwanderung verbunden.
-# Dieser Effekt ist statistisch hoch signifikant (p < 0.01).
+# Dieser Effekt ist statistisch hoch signifikant (p < 0.01), aber kontraintuitiv,
+# daher muss er mit Vorsicht interpretiert werden.
 # Konstante: Bei 0 % BIP-Wachstum und 0 % Arbeitslosenquote beträgt die
 # geschätzte Nettozuwanderung -18'119 Personen. Der Wert ist nicht signifikant.
 # Das Modell erklärt 21.4 % der Variation der Nettozuwanderung (R² = 0.214).
@@ -572,7 +583,7 @@ texreg::htmlreg(
 # da sich Nettozuwanderung in Zeitreihen über die Zeit selbst beeinflussen kann.
 # Das könnte Standardfehler verzerren und Signifikanztests beeinflussen.
 
-# Schritt 1: Korrelationsmatrix zwischen Nettozuwanderung, BIP-Wachstum und Arbeitslosenquote.
+# Korrelationsmatrix zwischen Nettozuwanderung, BIP-Wachstum und Arbeitslosenquote.
 # Das zeigt, ob die Prädiktoren stark miteinander korrelieren.
 korrelationsmatrix <- regressionsdaten |>
   cor()
@@ -580,7 +591,7 @@ korrelationsmatrix <- regressionsdaten |>
 # Korrelationsmatrix anzeigen.
 korrelationsmatrix
 
-# Ein Korrelationswert von r = 0.238 zwischen den Prädiktoren spricht für eine schwache Korrelation.
+# Ein Korrelationswert von r = 0.238 zwischen den Prädiktoren (BIP-Wachstum und Arbeitslosenquote) spricht für eine schwache Korrelation.
 # Das deutet auf kein starkes Multikollinearitätsproblem hin.
 
 # Jetzt messen wir auch die Autokorrelation. Die Autokorrelation der Residuen könnte darauf hinweisen,
@@ -613,9 +624,6 @@ konfidenzgrenze <- 1.96 / sqrt(n_beobachtungen)
 # Tabelle ausgeben
 autokorrelations_daten
 
-# Konfidenzgrenzen separat anzeigen
-konfidenzgrenze
-
 # Interpretation der ACF-Ergebnisse:
 # Ein "Lag" beschreibt die zeitliche Verschiebung zwischen Beobachtungen.
 # Lag 1 bedeutet z.B. den Vergleich zwischen einem Wert und dem Wert des Vorjahres,
@@ -625,20 +633,17 @@ konfidenzgrenze
 # insbesondere bei Lag 1 (0.74) und Lag 2 (0.38), beide über der 95%-Grenze (±0.336).
 # Das bedeutet, dass die Residuen zeitlich abhängig sind und nicht zufällig schwanken.
 #
-# Konsequenz:
 # Das Modell wird auch von einer zeitlichen Dynamik beeinflusst, die nicht durch die Prädiktoren erfasst wird.
-# Das könnte die Schätzung der Effekte verzerren.
+# Die Residuen zeigen zeitliche Abhängigkeiten und schwanken daher nicht zufällig.
+# Dadurch können insbesondere die Standardfehler und Signifikanztests der geschätzten Effekte verzerrt werden.
 
 # ============================================================
 # KAPITEL 7 — OBJEKTE IN LISTEN ZUSAMMENFASSEN
 # ============================================================
 
-# Wir fassen die wichtigsten Objekte in einfachen Listen zusammen.
-# Das macht das Projekt leichter zu überblicken und später leichter exportierbar.
+#Als letzte Etappe, auch für eine spärtere Erweritung der Anyse, werden alle wichtigen Objekte in Listen organisiert, und danach die
+#einzelnen Objekte gelöscht, um die Arbeitsumgebung aufzuräumen.
 
-# Alle wichtigen Variablen sind bereits in Deutsch vorhanden
-
-# Deutsche Listen-Namen.
 daten_objekte <- list(
   rohe_schweizer_einwanderung = rohe_schweizer_einwanderung,
   jahresdaten_schweizer_einwanderung = jahresdaten_schweizer_einwanderung,
@@ -670,7 +675,6 @@ plot_objekte <- list(
   balkendiagramm_laender = horizontales_balkendiagramm
 )
 
-# Die Listen kurz in der Konsole anzeigen.
 daten_objekte
 matrix_objekte
 modell_objekte
