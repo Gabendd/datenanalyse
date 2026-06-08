@@ -1,6 +1,111 @@
 # ============================================================
+# REPRODUZIERBARKEITS-PRÜFUNG
+# ============================================================
+
+# Definiert die Paketversionen, die während der Entwicklung verwendet wurden
+
+# ============================================================
+erforderliche_versionen <- list(
+  readr = "1.4.0",
+  dplyr = "1.1.4",
+  stringr = "1.5.1",
+  stringi = "1.8.3",
+  tibble = "3.2.1",
+  tidyr = "1.3.0",
+  ggplot2 = "3.4.4",
+  scales = "1.3.0",
+  sf = "1.0.15",
+  WDI = "2.7.10",
+  rnaturalearth = "0.3.4",
+  countrycode = "1.4.0",
+  rvest = "1.0.3",
+  huxtable = "5.5.0",
+  stargazer = "5.2.3",
+  texreg = "1.38.7",
+  broom = "1.0.5",
+  codetools = "0.2.19"
+)
+
+
+# ============================================================
+# Versionen prüfen
+# ============================================================
+
+# Liste für abweichende Versionen vorbereiten
+version_mismatches <- list()
+
+# Jedes Paket prüfen
+for (pkg in names(erforderliche_versionen)) {
+  # Prüfen ob Paket installiert ist
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    stop(paste(
+      "\nFEHLER: Paket '",
+      pkg,
+      "' ist NICHT installiert!\n",
+      "Installieren Sie es zuerst mit: install.packages('",
+      pkg,
+      "')"
+    ))
+  }
+
+  # Aktuelle Version holen
+  aktuelle_version <- as.character(packageVersion(pkg))
+  benoetigte_version <- erforderliche_versionen[[pkg]]
+
+  # Bei Abweichung speichern
+  if (aktuelle_version != benoetigte_version) {
+    version_mismatches[[pkg]] <- list(
+      aktuell = aktuelle_version,
+      benoetigt = benoetigte_version
+    )
+  }
+}
+
+# ============================================================
+# Warnungen oder Bestätigung ausgeben
+# ============================================================
+if (length(version_mismatches) > 0) {
+  cat(
+    "\n⚠️  VERSIONS-WARNUNG: Paketversionen weichen von der Entwicklungs-Umgebung ab\n"
+  )
+  cat("   Das Skript wird trotzdem ausgeführt. Bei Fehlern versuchen Sie:\n")
+  cat(
+    "   1. Exakte Versionen mit: remotes::install_version('paket', version = 'x.y.z')\n"
+  )
+  cat("   2. Oder renv für garantierte Reproduzierbarkeit einrichten\n\n")
+  cat("   Installierte vs. Entwicklungs-Versionen:\n")
+
+  for (pkg in names(version_mismatches)) {
+    aktuell <- version_mismatches[[pkg]]$aktuell
+    benoetigt <- version_mismatches[[pkg]]$benoetigt
+    cat(paste0(
+      "   • ",
+      pkg,
+      ": Sie haben ",
+      aktuell,
+      ", Entwicklung nutzte ",
+      benoetigt,
+      "\n"
+    ))
+  }
+  cat("\n")
+  Sys.sleep(10) # 10 Sekunden Pause, damit Nutzer die Warnung lesen kann
+} else {
+  cat("\n✓ Alle Paketversionen entsprechen der Entwicklungs-Umgebung\n")
+  cat(
+    "  Reproduzierbarkeits-Prüfung abgeschlossen. Skript wird fortgesetzt.\n\n"
+  )
+  Sys.sleep(10) # 10 Sekunden Pause, damit Nutzer die Meldung lesen kann
+}
+
+# ============================================================
 # KAPITEL 1 — SETUP UND PAKETE
 # ============================================================
+# Arbeitsverzeichnis auf den Skript-Speicherort setzen
+script_pfad <- dirname(rstudioapi::getActiveDocumentContext()$path)
+setwd(script_pfad)
+cat("Arbeitsverzeichnis gesetzt auf:", script_pfad, "\n")
+
 
 # Benötigte Pakete laden
 erforderliche_pakete <- c(
@@ -24,6 +129,7 @@ erforderliche_pakete <- c(
   "rvest"
 )
 
+
 options(scipen = 999)
 options(repos = c(CRAN = "https://cloud.r-project.org"))
 
@@ -35,7 +141,7 @@ if (length(fehlende_pakete) > 0) {
 invisible(lapply(erforderliche_pakete, library, character.only = TRUE))
 
 # Arbeitsverzeichnisse definieren
-pfade <- c("tabellen", "grafiken")
+pfade <- c("tabellen", "grafiken", "data")
 invisible(lapply(pfade, function(pfad) {
   if (!dir.exists(pfad)) {
     dir.create(pfad, recursive = TRUE)
@@ -57,10 +163,21 @@ invisible(lapply(pfade, function(pfad) {
 # "Amérique", "Asie", "Océanie") sowie die Zeilen mit nicht-informativem Text (z. B. "Renseignements|Source|© OFS") herausgefiltert.
 
 # Immigrationsdaten einlesen, bereinigen und filtern
-rohe_schweizer_einwanderung <- readr::read_csv(
-  "data/swiss_immigration_countries_year.csv",
-  show_col_types = FALSE
-) |>
+# Falls lokale Datei existiert, wird diese verwendet. Ansonsten wird von GitHub geladen.
+if (file.exists("data/swiss_immigration_countries_year.csv")) {
+  rohe_schweizer_einwanderung <- readr::read_csv(
+    "data/swiss_immigration_countries_year.csv",
+    show_col_types = FALSE
+  )
+} else {
+  rohe_schweizer_einwanderung <- readr::read_csv(
+    "https://raw.githubusercontent.com/Gabendd/datenanalyse/main/data/swiss_immigration_countries_year.csv",
+    show_col_types = FALSE
+  )
+}
+
+# Datenaufbereitung fortsetzen
+rohe_schweizer_einwanderung <- rohe_schweizer_einwanderung |>
   dplyr::mutate(
     jahr = as.integer(year),
     netto_zuwanderung = as.numeric(net_migration)
@@ -715,3 +832,12 @@ rm(
   n_beobachtungen,
   autokorrelations_daten
 )
+
+# ============================================================
+# KAPITEL 8 — SESSION INFORMATION (für Debugging und Reproduzierbarkeit)
+# ============================================================
+# Diese Information hilft, die genaue R-Version und Paketversionen zu identifizieren,
+# falls der Code nicht wie erwartet funktioniert.
+
+cat("\n\n========== SESSION INFO ==========\n")
+sessionInfo()

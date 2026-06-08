@@ -2,3 +2,14 @@
 .Rhistory
 .RData
 .Ruserdata
+
+# renv files (uncomment if using renv)
+# renv/
+# renv.lock
+# .Rprofile
+grafiken/
+tabellen/
+data/world_bank_raw.rds
+data/regressionsdaten.csv
+.DS_Store
+.Rapp.history
