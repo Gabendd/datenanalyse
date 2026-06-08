@@ -21,7 +21,8 @@ erforderliche_pakete <- c(
   "stargazer",
   "texreg",
   "tidyr",
-  "codetools"
+  "codetools",
+  "rvest"
 )
 
 options(scipen = 999)
@@ -316,6 +317,18 @@ kurven_diagramm <- ggplot(
 
 print(kurven_diagramm)
 
+# Nach einer Phase mit einer Abnahme der Nettozuwanderung und
+# einer Auswanderungsphase zwischen 1995 und 2000 gab es ab 2000 wieder
+# einen starken Anstieg der Nettozuwanderung.
+
+# Mit der Finanzkrise 2008 gab es einen Einbruch, aber danach stieg die
+# Nettozuwanderung wieder  an, bis ab 2014, und danach
+# wieder eine Abnahme folgte.
+
+# Es ist aber zu beachten, dass unsere Daten nur die Einwanderung aus
+# 15 Ländern darstellen, was die Repräsentativität der Grafik
+# einschränkt.
+
 # ============================================================
 # KAPITEL 4B — BOXPLOT: NETTOZUWANDERUNG NACH VORZEICHEN
 # ============================================================
@@ -360,7 +373,27 @@ boxplot_vorzeichen <- ggplot(
 
 print(boxplot_vorzeichen)
 
-# Die Streuung der Nettozuwanderung ist in den positiven Jahren deutlich grösser.
+
+# Wir sehen dass die Streuung der Nettozuwanderung in den positiven Jahren deutlich grösser ist.
+# Die Schweizer Migration wird von wenigen Jahren mit extrem hoher
+# Einwanderung dominiert , während Auswanderungsjahre selten sind.
+# und moderate, stabile Verluste aufweisen. Dies erklärt die Asymmetrie im Boxplot.
+
+# Statistische Zusammenfassung für präzise Interpretation
+summary_stats <- jahresdaten_mit_vorzeichen |>
+  dplyr::group_by(migration_sign) |>
+  dplyr::summarize(
+    count = n(),
+    mean = mean(netto_migration),
+    median = median(netto_migration),
+    sd = sd(netto_migration),
+    min = min(netto_migration),
+    max = max(netto_migration),
+    iqr = IQR(netto_migration)
+  )
+
+print(summary_stats)
+
 
 # ============================================================
 # KAPITEL 4C — HORIZONTALES BALKENDIAGRAMM: NETTOZUWANDERUNG PRO HERKUNFTSLAND
