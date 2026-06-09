@@ -1,7 +1,7 @@
 ---
-title: "Nettozuwanderung in die Schweiz"
-subtitle: "Vollständiger Code — Version für Dozierende"
-author: "Dein Name"
+title: "Einführung in die Datenanalyse mit R: Analyse der Nettozuwanderung in die Schweiz"
+subtitle: "Vollständiger Code"
+author: "Vincent Pickert - 2020-061-610 "
 date: today
 format:
   html:
@@ -23,8 +23,7 @@ lang: de
 ::: {.callout-note}
 **Hinweis zur Version:** Dies ist die vollständige Code-Version der Analyse.
 Alle Code-Blöcke sind sichtbar und können über die Schaltfläche „Code anzeigen"
-ein- und ausgeklappt werden. Eine separate Berichtsversion (ohne sichtbaren Code)
-steht ebenfalls zur Verfügung.
+ein- und ausgeklappt werden. 
 :::
 
 # Reproduzierbarkeits-Prüfung {#sec-reproduzierbarkeit}
@@ -38,24 +37,26 @@ der Entwicklungsumgebung übereinstimmen. Bei Abweichungen erscheint eine Warnun
 #| message: false
 
 erforderliche_versionen <- list(
-  readr     = "1.4.0",
-  dplyr     = "1.1.4",
-  stringr   = "1.5.1",
-  stringi   = "1.8.3",
-  tibble    = "3.2.1",
-  tidyr     = "1.3.0",
-  ggplot2   = "3.4.4",
-  scales    = "1.3.0",
-  sf        = "1.0.15",
-  WDI       = "2.7.10",
-  rnaturalearth = "0.3.4",
-  countrycode   = "1.4.0",
-  rvest     = "1.0.3",
-  huxtable  = "5.5.0",
-  stargazer = "5.2.3",
-  texreg    = "1.38.7",
-  broom     = "1.0.5",
-  codetools = "0.2.19"
+  readr         = "2.2.0",
+  dplyr         = "1.2.1",
+  stringr       = "1.6.0",
+  stringi       = "1.8.7",
+  tibble        = "3.3.1",
+  tidyr         = "1.3.2",
+  ggplot2       = "4.0.3",
+  scales        = "1.4.0",
+  sf            = "1.1.1",
+  WDI           = "2.7.10",
+  rnaturalearth = "1.2.0",
+  countrycode   = "1.8.0",
+  rvest         = "1.0.5",
+  huxtable      = "5.8.0",
+  stargazer     = "5.2.3",
+  texreg        = "1.39.5",
+  broom         = "1.0.13",
+  codetools     = "0.2.20",
+  gtsummary     = "2.5.1",
+  gt            = "1.3.0"
 )
 
 version_mismatches <- list()
@@ -96,11 +97,11 @@ neben dem Skript erstellt, falls sie noch nicht existieren.
 #| warning: false
 #| message: false
 
-# Pakete laden
 erforderliche_pakete <- c(
   "readr", "dplyr", "stringr", "stringi", "ggplot2", "WDI",
   "rnaturalearth", "countrycode", "huxtable", "scales", "sf",
-  "tibble", "broom", "stargazer", "texreg", "tidyr", "codetools", "rvest"
+  "tibble", "broom", "stargazer", "texreg", "tidyr", "codetools",
+  "rvest", "gtsummary", "gt"
 )
 
 options(scipen = 999)
@@ -113,8 +114,6 @@ if (length(fehlende_pakete) > 0) {
 
 invisible(lapply(erforderliche_pakete, library, character.only = TRUE))
 
-# Ausgabe-Ordner erstellen (Quarto setzt das Arbeitsverzeichnis automatisch
-# auf den Speicherort dieser .qmd-Datei)
 pfade <- c("tabellen", "grafiken", "data")
 invisible(lapply(pfade, function(pfad) {
   if (!dir.exists(pfad)) dir.create(pfad, recursive = TRUE)
@@ -128,7 +127,7 @@ cat("Ordner erstellt / vorhanden:", paste(pfade, collapse = ", "), "\n")
 
 ## Schweizerische Einwanderungsdaten {#sec-einwanderung}
 
-Die Einwanderungsdaten wurden von der BFS-Webseite heruntergeladen. Sie
+Die Einwanderungsdaten wurden von der Bundesamt für Statistik-Webseite heruntergeladen. Sie
 enthalten die Nettozuwanderung nach Herkunftsland und Jahr (1991–2024).
 Das Skript lädt die Datei lokal, falls vorhanden, ansonsten direkt von GitHub.
 
@@ -517,7 +516,6 @@ Fällen die Nettozuwanderung auf Jahresbasis.
 regressionsdaten <- analysedaten_schweiz |>
   dplyr::select(netto_zuwanderung, bip_wachstum, arbeitslosenquote)
 
-# Regressionsdaten als CSV speichern (zur Nachvollziehbarkeit)
 readr::write_csv(regressionsdaten, "data/regressionsdaten.csv")
 
 cat("Beobachtungen:", nrow(regressionsdaten), "\n")
@@ -578,6 +576,54 @@ statistisch hoch signifikanten positiven Effekt (+11'709 Personen pro
 Prozentpunkt, p < 0.01) — ein kontraintuitives Ergebnis, das auf nicht erfasste
 Drittvariablen hindeutet (z.B. Freizügigkeitsabkommen, Arbeitsmarktlage im
 Herkunftsland). R² = 0.214.
+
+# Deskriptive Statistik {#sec-deskriptiv}
+
+Die folgende Tabelle vergleicht die zentralen Analysevariablen zwischen Jahren
+mit positiver und negativer Nettozuwanderung (Einwanderungs- vs.
+Auswanderungsjahren).
+
+```{r}
+#| label: deskriptive-tabelle
+#| warning: false
+#| message: false
+
+deskriptive_tabelle <- analysedaten_schweiz |>
+  dplyr::mutate(
+    migrationsrichtung = ifelse(
+      netto_zuwanderung >= 0,
+      "Einwanderung",
+      "Auswanderung"
+    )
+  ) |>
+  dplyr::select(
+    migrationsrichtung,
+    netto_zuwanderung,
+    bip_wachstum,
+    arbeitslosenquote
+  ) |>
+  gtsummary::tbl_summary(
+    by = migrationsrichtung,
+    label = list(
+      netto_zuwanderung ~ "Nettozuwanderung",
+      bip_wachstum      ~ "BIP-Wachstum (%)",
+      arbeitslosenquote ~ "Arbeitslosenquote (%)"
+    ),
+    statistic = list(all_continuous() ~ "{mean} ({sd})"),
+    digits    = all_continuous() ~ 2
+  ) |>
+  gtsummary::modify_header(label = "**Variable**") |>
+  gtsummary::bold_labels() |>
+  gtsummary::add_p() |>
+  gtsummary::as_gt() |>
+  gt::tab_header(title = "Deskriptive Statistik nach Migrationsrichtung")
+
+deskriptive_tabelle
+```
+
+BIP-Wachstum (p = 0.8) und Arbeitslosenquote (p = 0.3) unterscheiden sich
+zwischen Einwanderungs- und Auswanderungsjahren kaum — konsistent mit den
+nicht signifikanten Regressionseffekten aus dem vorigen Kapitel.
 
 # Diagnostische Tests {#sec-diagnostik}
 
@@ -643,18 +689,6 @@ Einzelne Objekte werden anschliessend aus dem Arbeitsumfeld entfernt.
 ```{r}
 #| label: cleanup
 
-daten_objekte <- list(
-  rohe_schweizer_einwanderung        = rohe_schweizer_einwanderung,
-  jahresdaten_schweizer_einwanderung = jahresdaten_schweizer_einwanderung,
-  analysedaten_schweiz               = analysedaten_schweiz,
-  regressionsdaten                   = regressionsdaten,
-  indikatoren_tabelle                = indikatoren_liste,
-  schweizer_weltbank_daten           = schweizer_weltbank_daten,
-  weltkarten_daten                   = karten_daten,
-  laender_summen                     = laender_gesamt,
-  autokorrelations_tabelle           = autokorrelations_daten
-)
-
 matrix_objekte <- list(
   korrelationsmatrix = korrelationsmatrix,
   acf_objekt         = acf_objekt,
@@ -682,8 +716,9 @@ rm(
   jahresdaten_schweizer_einwanderung, analysedaten_schweiz, regressionsdaten,
   modell_1_bip, modell_2_bip_arbeitslosenquote, schweiz_migrations_weltkarte,
   kurven_diagramm, boxplot_vorzeichen, horizontales_balkendiagramm,
-  laender_gesamt, jahresdaten_mit_vorzeichen, korrelationsmatrix,
-  acf_objekt, konfidenzgrenze, n_beobachtungen, autokorrelations_daten
+  laender_gesamt, jahresdaten_mit_vorzeichen, zusammenfassung,
+  korrelationsmatrix, acf_objekt, konfidenzgrenze, n_beobachtungen,
+  autokorrelations_daten
 )
 
 cat("✓ Aufräumen abgeschlossen.\n")

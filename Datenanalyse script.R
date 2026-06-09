@@ -6,24 +6,26 @@
 
 # ============================================================
 erforderliche_versionen <- list(
-  readr = "1.4.0",
-  dplyr = "1.1.4",
-  stringr = "1.5.1",
-  stringi = "1.8.3",
-  tibble = "3.2.1",
-  tidyr = "1.3.0",
-  ggplot2 = "3.4.4",
-  scales = "1.3.0",
-  sf = "1.0.15",
+  readr = "2.2.0",
+  dplyr = "1.2.1",
+  stringr = "1.6.0",
+  stringi = "1.8.7",
+  tibble = "3.3.1",
+  tidyr = "1.3.2",
+  ggplot2 = "4.0.3",
+  scales = "1.4.0",
+  sf = "1.1.1",
   WDI = "2.7.10",
-  rnaturalearth = "0.3.4",
-  countrycode = "1.4.0",
-  rvest = "1.0.3",
-  huxtable = "5.5.0",
+  rnaturalearth = "1.2.0",
+  countrycode = "1.8.0",
+  rvest = "1.0.5",
+  huxtable = "5.8.0",
   stargazer = "5.2.3",
-  texreg = "1.38.7",
-  broom = "1.0.5",
-  codetools = "0.2.19"
+  texreg = "1.39.5",
+  broom = "1.0.13",
+  codetools = "0.2.20",
+  gtsummary = "2.5.1",
+  gt = "1.3.0"
 )
 
 
@@ -126,7 +128,9 @@ erforderliche_pakete <- c(
   "texreg",
   "tidyr",
   "codetools",
-  "rvest"
+  "rvest",
+  "gtsummary",
+  "gt"
 )
 
 
@@ -310,7 +314,7 @@ schweizer_weltbank_daten <- weltbank_rohe_daten |>
 # KAPITEL 2C — ZUSAMMENGEFÜHRTE ANALYSEDATEN
 # ============================================================
 
-# Jetzt werden die aufbereiteten Einwanderungsdaten mit den World Bank Indikatoren zusammengeführt,
+# Jetzt werden die aufbereiteten Einwanderungsd4aten mit den World Bank Indikatoren zusammengeführt,
 # um einen Datensatz zu erstellen, der alle benötigten Variablen für die Analyse enthält.
 
 analysedaten_schweiz <- jahresdaten_schweizer_einwanderung |>
@@ -692,7 +696,54 @@ texreg::htmlreg(
 # in den Herkunftsländern etc.
 
 # ============================================================
-# KAPITEL 6 — DIAGNOSTISCHE TESTS UND RESIDUALANALYSE
+# KAPITEL 6 — DESKRIPTIVE STATISTIK DER ANALYSEVARIABLEN
+# ============================================================
+# Mithilfe Deskriptiver Statistiken können wir die Verteilung und
+# zentrale Tendenzen der Variablen in unserem Datensatz besser verstehen.
+#
+# Das Kapitel erstellt eine übersichtliche Zusammenfassungstabelle der wichtigsten
+# Variablen, gruppiert nach Migrationsrichtung (Einwanderung/Auswanderung)
+
+deskriptive_tabelle <- analysedaten_schweiz |>
+  dplyr::mutate(
+    migrationsrichtung = ifelse(
+      netto_zuwanderung >= 0,
+      "Einwanderung",
+      "Auswanderung"
+    )
+  ) |>
+  dplyr::select(
+    migrationsrichtung,
+    netto_zuwanderung,
+    bip_wachstum,
+    arbeitslosenquote
+  ) |>
+  gtsummary::tbl_summary(
+    by = migrationsrichtung,
+    label = list(
+      netto_zuwanderung ~ "Nettozuwanderung",
+      bip_wachstum ~ "BIP-Wachstum (%)",
+      arbeitslosenquote ~ "Arbeitslosenquote (%)"
+    ),
+    statistic = list(all_continuous() ~ "{mean} ({sd})"),
+    digits = all_continuous() ~ 2
+  ) |>
+  gtsummary::modify_header(label = "**Variable**") |>
+  gtsummary::bold_labels() |>
+  gtsummary::add_p() |>
+  gtsummary::as_gt() |>
+  gt::tab_header(title = "Deskriptive Statistik nach Migrationsrichtung")
+
+print(deskriptive_tabelle)
+
+
+# Die deskriptive Tabelle zeigt, dass sich BIP-Wachstum (p = 0.8) und
+# Arbeitslosenquote (p = 0.3) zwischen Einwanderungs- und Auswanderungsjahren
+# kaum unterscheiden, was mit den nicht signifikanten Regressionseffekten
+# aus Kapitel 5 übereinstimmt.
+
+# ============================================================
+# KAPITEL 7 — DIAGNOSTISCHE TESTS UND RESIDUALANALYSE
 # ============================================================
 
 # Um die Modelle genauer zu analysieren, ist es sinnvoll, die Korrelationen zwischen den Prädiktoren zu prüfen,
@@ -755,23 +806,11 @@ autokorrelations_daten
 # Dadurch können insbesondere die Standardfehler und Signifikanztests der geschätzten Effekte verzerrt werden.
 
 # ============================================================
-# KAPITEL 7 — OBJEKTE IN LISTEN ZUSAMMENFASSEN
+# KAPITEL 8 — OBJEKTE IN LISTEN ZUSAMMENFASSEN
 # ============================================================
 
 #Als letzte Etappe, auch für eine spärtere Erweritung der Anyse, werden alle wichtigen Objekte in Listen organisiert, und danach die
 #einzelnen Objekte gelöscht, um die Arbeitsumgebung aufzuräumen.
-
-daten_objekte <- list(
-  rohe_schweizer_einwanderung = rohe_schweizer_einwanderung,
-  jahresdaten_schweizer_einwanderung = jahresdaten_schweizer_einwanderung,
-  analysedaten_schweiz = analysedaten_schweiz,
-  regressionsdaten = regressionsdaten,
-  indikatoren_tabelle = indikatoren_liste,
-  schweizer_weltbank_daten = schweizer_weltbank_daten,
-  weltkarten_daten = karten_daten,
-  laender_summen = laender_gesamt,
-  autokorrelations_tabelle = autokorrelations_daten
-)
 
 matrix_objekte <- list(
   korrelationsmatrix = korrelationsmatrix,
@@ -792,7 +831,6 @@ plot_objekte <- list(
   balkendiagramm_laender = horizontales_balkendiagramm
 )
 
-daten_objekte
 matrix_objekte
 modell_objekte
 plot_objekte
@@ -826,6 +864,7 @@ rm(
   horizontales_balkendiagramm,
   laender_gesamt,
   jahresdaten_mit_vorzeichen,
+  zusammenfassung,
   korrelationsmatrix,
   acf_objekt,
   konfidenzgrenze,
@@ -834,7 +873,7 @@ rm(
 )
 
 # ============================================================
-# KAPITEL 8 — SESSION INFORMATION (für Debugging und Reproduzierbarkeit)
+# KAPITEL 9 — SESSION INFORMATION (für Debugging und Reproduzierbarkeit)
 # ============================================================
 # Diese Information hilft, die genaue R-Version und Paketversionen zu identifizieren,
 # falls der Code nicht wie erwartet funktioniert.
