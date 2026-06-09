@@ -812,6 +812,18 @@ autokorrelations_daten
 #Als letzte Etappe, auch für eine spärtere Erweritung der Anyse, werden alle wichtigen Objekte in Listen organisiert, und danach die
 #einzelnen Objekte gelöscht, um die Arbeitsumgebung aufzuräumen.
 
+daten_objekte <- list(
+  rohe_schweizer_einwanderung = rohe_schweizer_einwanderung,
+  jahresdaten_schweizer_einwanderung = jahresdaten_schweizer_einwanderung,
+  analysedaten_schweiz = analysedaten_schweiz,
+  regressionsdaten = regressionsdaten,
+  indikatoren_tabelle = indikatoren_liste,
+  schweizer_weltbank_daten = schweizer_weltbank_daten,
+  weltkarten_daten = karten_daten,
+  laender_summen = laender_gesamt,
+  autokorrelations_tabelle = autokorrelations_daten
+)
+
 matrix_objekte <- list(
   korrelationsmatrix = korrelationsmatrix,
   acf_objekt = acf_objekt,
@@ -831,6 +843,7 @@ plot_objekte <- list(
   balkendiagramm_laender = horizontales_balkendiagramm
 )
 
+daten_objekte
 matrix_objekte
 modell_objekte
 plot_objekte
