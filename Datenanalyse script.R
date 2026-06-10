@@ -38,29 +38,21 @@ version_mismatches <- list()
 
 # Jedes Paket prüfen
 for (pkg in names(erforderliche_versionen)) {
-  # Prüfen ob Paket installiert ist
-  if (!requireNamespace(pkg, quietly = TRUE)) {
-    stop(paste(
-      "\nFEHLER: Paket '",
-      pkg,
-      "' ist NICHT installiert!\n",
-      "Installieren Sie es zuerst mit: install.packages('",
-      pkg,
-      "')"
-    ))
-  }
+  # Nur prüfen, wenn Paket installiert ist
+  if (requireNamespace(pkg, quietly = TRUE)) {
+    # Aktuelle Version holen
+    aktuelle_version <- as.character(packageVersion(pkg))
+    benoetigte_version <- erforderliche_versionen[[pkg]]
 
-  # Aktuelle Version holen
-  aktuelle_version <- as.character(packageVersion(pkg))
-  benoetigte_version <- erforderliche_versionen[[pkg]]
-
-  # Bei Abweichung speichern
-  if (aktuelle_version != benoetigte_version) {
-    version_mismatches[[pkg]] <- list(
-      aktuell = aktuelle_version,
-      benoetigt = benoetigte_version
-    )
+    # Bei Abweichung speichern
+    if (aktuelle_version != benoetigte_version) {
+      version_mismatches[[pkg]] <- list(
+        aktuell = aktuelle_version,
+        benoetigt = benoetigte_version
+      )
+    }
   }
+  # Pakete die nicht installiert sind werden später durch install.packages installiert
 }
 
 # ============================================================
@@ -104,10 +96,14 @@ if (length(version_mismatches) > 0) {
 # KAPITEL 1 — SETUP UND PAKETE
 # ============================================================
 # Arbeitsverzeichnis auf den Skript-Speicherort setzen
-script_pfad <- dirname(rstudioapi::getActiveDocumentContext()$path)
+if (requireNamespace("rstudioapi", quietly = TRUE) && rstudioapi::isAvailable()) {
+  script_pfad <- dirname(rstudioapi::getActiveDocumentContext()$path)
+} else {
+  script_pfad <- getwd()
+}
+
 setwd(script_pfad)
 cat("Arbeitsverzeichnis gesetzt auf:", script_pfad, "\n")
-
 
 # Benötigte Pakete laden
 erforderliche_pakete <- c(
