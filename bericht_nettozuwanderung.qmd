@@ -142,7 +142,7 @@ analysedaten_schweiz <- jahresdaten_schweizer_einwanderung |>
 ```{r}
 #| label: visualisierungen
 
-# Karte
+# --- Karte ---
 welt <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf")
 
 karten_daten <- rohe_schweizer_einwanderung |>
@@ -152,9 +152,17 @@ karten_daten <- rohe_schweizer_einwanderung |>
     .groups = "drop"
   ) |>
   dplyr::mutate(
-    iso_a3 = countrycode::countrycode(herkunft, "country.name", "iso3c")
+    iso_a3 = countrycode::countrycode(herkunft, "country.name", "iso3c"),
+    herkunft_de = countrycode::countrycode(
+      herkunft,
+      origin      = "country.name.en",
+      destination = "country.name.de"
+    )
   ) |>
   dplyr::filter(!is.na(iso_a3))
+
+# Länderliste auf Deutsch, alphabetisch sortiert (für Datenquellen-Tabelle)
+karten_laender_liste <- sort(karten_daten$herkunft_de)
 
 weltkarte_sf <- welt |>
   dplyr::mutate(iso_a3 = dplyr::coalesce(iso_a3_eh, iso_a3)) |>
@@ -175,17 +183,18 @@ schweiz_migrations_weltkarte <- ggplot2::ggplot(weltkarte_sf) +
     low = "#deebf7", high = "#08519c", na.value = "grey90"
   ) +
   ggplot2::labs(
-    title   = "Nettozuwanderung in die Schweiz nach Herkunftsland (Europa)",
-    fill    = "",
-    caption = "Nur die 15 Herkunftsländer aus den Einwanderungsdaten"
+    title = "Nettozuwanderung in die Schweiz nach Herkunftsland (Europa)",
+    fill  = ""
   ) +
   ggplot2::theme_void() +
   ggplot2::theme(
-    plot.title   = ggplot2::element_text(face = "bold", size = 14),
-    plot.caption = ggplot2::element_text(size = 9, hjust = 0)
+    plot.title          = ggplot2::element_text(face = "plain", size = 21, hjust = 0.5),
+    plot.title.position = "plot",
+    legend.title        = ggplot2::element_blank(),
+    legend.text         = ggplot2::element_text(size = 21)
   )
 
-# Zeitreihe
+# --- Zeitreihe ---
 kurven_diagramm <- ggplot2::ggplot(
   jahresdaten_schweizer_einwanderung,
   ggplot2::aes(x = jahr, y = netto_zuwanderung)
@@ -193,18 +202,22 @@ kurven_diagramm <- ggplot2::ggplot(
   ggplot2::geom_line(color = "#08519c", linewidth = 1) +
   ggplot2::geom_point(color = "#08519c", size = 2) +
   ggplot2::labs(
-    x        = "Jahr",
-    y        = "Nettozuwanderung",
-    title    = "Nettozuwanderung in die Schweiz nach Jahr",
-    subtitle = "Gesamtwert für alle Herkunftsländer kombiniert"
+    x     = "Jahr",
+    y     = "Nettozuwanderung",
+    title = "Nettozuwanderung in die Schweiz nach Jahr"
   ) +
   ggplot2::theme_minimal() +
   ggplot2::scale_x_continuous(breaks = seq(1990, 2025, by = 5)) +
   ggplot2::scale_y_continuous(
     labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
+  ) +
+  ggplot2::theme(
+    plot.title = ggplot2::element_text(face = "plain", size = 21, hjust = 0.5),
+    axis.title = ggplot2::element_text(size = 22),
+    axis.text  = ggplot2::element_text(size = 22)
   )
 
-# Boxplot
+# --- Boxplot ---
 jahresdaten_mit_vorzeichen <- jahresdaten_schweizer_einwanderung |>
   dplyr::mutate(
     migration_sign = ifelse(
@@ -227,14 +240,21 @@ boxplot_vorzeichen <- ggplot2::ggplot(
     name = "Migrationsrichtung"
   ) +
   ggplot2::labs(
-    x        = "",
-    y        = "Nettozuwanderung",
-    title    = "Nettozuwanderung nach Vorzeichen",
-    subtitle = "Vergleich zwischen Jahren mit Einwanderung und Auswanderung"
+    x     = "",
+    y     = "Nettozuwanderung",
+    title = "Nettozuwanderung nach Vorzeichen"
   ) +
   ggplot2::theme_minimal() +
   ggplot2::scale_y_continuous(
     labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
+  ) +
+  ggplot2::theme(
+    plot.title          = ggplot2::element_text(face = "plain", size = 21, hjust = 0.5),
+    plot.title.position = "plot",
+    axis.title          = ggplot2::element_text(size = 22),
+    axis.text           = ggplot2::element_text(size = 22),
+    legend.title        = ggplot2::element_text(size = 21),
+    legend.text         = ggplot2::element_text(size = 14)
   )
 
 zusammenfassung <- jahresdaten_mit_vorzeichen |>
@@ -249,32 +269,44 @@ zusammenfassung <- jahresdaten_mit_vorzeichen |>
     IQR        = IQR(netto_zuwanderung)
   )
 
-# Balkendiagramm
+# --- Balkendiagramm (deutsche Ländernamen) ---
 laender_gesamt <- rohe_schweizer_einwanderung |>
   dplyr::group_by(herkunft) |>
   dplyr::summarise(
     gesamt_netto_zuwanderung = sum(netto_zuwanderung, na.rm = TRUE),
     .groups = "drop"
   ) |>
-  dplyr::arrange(desc(gesamt_netto_zuwanderung))
+  dplyr::arrange(desc(gesamt_netto_zuwanderung)) |>
+  dplyr::mutate(
+    herkunft_de = countrycode::countrycode(
+      herkunft,
+      origin      = "country.name.en",
+      destination = "country.name.de"
+    )
+  )
 
 horizontales_balkendiagramm <- ggplot2::ggplot(
   laender_gesamt,
   ggplot2::aes(
     x = gesamt_netto_zuwanderung,
-    y = reorder(herkunft, gesamt_netto_zuwanderung)
+    y = reorder(herkunft_de, gesamt_netto_zuwanderung)
   )
 ) +
   ggplot2::geom_col(fill = "#08519c", color = "white", linewidth = 0.2) +
   ggplot2::labs(
-    x        = "Gesamt Nettozuwanderung",
-    y        = "Herkunftsland",
-    title    = "Gesamt Nettozuwanderung in die Schweiz nach Herkunftsland",
-    subtitle = "Summe über den gesamten Zeitraum (1991–2024)"
+    x     = "Gesamt Nettozuwanderung",
+    y     = "Herkunftsland",
+    title = "Gesamt Nettozuwanderung in die Schweiz nach Herkunftsland"
   ) +
   ggplot2::theme_minimal() +
   ggplot2::scale_x_continuous(
     labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
+  ) +
+  ggplot2::theme(
+    plot.title  = ggplot2::element_text(face = "plain", size = 21, hjust = 0.5),
+    axis.title  = ggplot2::element_text(size = 22),
+    axis.text   = ggplot2::element_text(size = 22),
+    axis.text.y = ggplot2::element_text(size = 21)
   )
 ```
 
@@ -327,7 +359,8 @@ beeinflusst.
 Die Arbeitslosenquote wird als Kontrollvariable einbezogen, da sie die
 Einwanderung auf eine direktere Weise als Arbeitsmarktindikator beeinflusst.
 Durch einen längeren Zeitraum wird die Analyse weniger durch einzelne Ereignisse
-wie die Finanzkrise 2008 verzerrt.
+wie die Finanzkrise 2008 verzerrt. Diese Ereignisse werden als "Fixed Effects" in 
+der Zeitreihenanalyse bennent.
 
 Die zwei Regressionsmodelle lauten:
 
@@ -347,9 +380,19 @@ den Fehlerterm.
 Die Schweizer Einwanderungsdaten (die abhängige Variable) stammen vom
 Bundesamt für Statistik (BFS) und wurden als CSV-Dateien manuell heruntergeladen.
 Sie enthalten Angaben zu Herkunftsland, Jahr und Nettozuwanderung. Der Datensatz
-umfasst 15 europäische Länder, davon die Mehrheit der EU-Länder. Die Beschränkung
+umfasst 15 europäische Länder. Die Beschränkung
 auf 15 Länder geht auf einen bestehenden Datensatz einer Masterarbeit zurück und
-könnte die Repräsentativität der Ergebnisse begrenzen.
+könnte die Repräsentativität der Ergebnisse begrenzen. Die folgende Tabelle zeigt
+alle im Datensatz enthaltenen Herkunftsländer:
+
+```{r}
+#| label: tbl-laender
+
+knitr::kable(
+  data.frame(Herkunftsland = karten_laender_liste),
+  caption = "Im Datensatz enthaltene Herkunftsländer (alphabetisch sortiert)."
+)
+```
 
 Die wirtschaftlichen Indikatoren (unabhängige und Kontrollvariable) stammen von
 der Weltbank:
@@ -364,7 +407,7 @@ der Weltbank:
 Bei der Datenaufbereitung zeigte sich, dass die Nettozuwanderung ein Minimum
 von −10'589 aufweist, was bedeutet, dass es Jahre gab, in denen die Schweiz
 mehr Auswanderungen als Einwanderungen verzeichnete. Der Median von 29'210
-liegt unter dem Mittelwert von 32'34, was auf einzelne Jahre mit sehr hoher
+liegt unter dem Mittelwert von 32'340, was auf einzelne Jahre mit sehr hoher
 Zuwanderung hindeutet.
 
 ```{r}
@@ -399,7 +442,6 @@ insgesamt die Einwanderungsjahre deutlich gegenüber den Auswanderungsjahren.
 
 ```{r}
 #| label: fig-zeitreihe
-#| fig-cap: "Jährliche Nettozuwanderung in die Schweiz (1991–2024). Hinweis: Die Daten beziehen sich nur auf 15 Herkunftsländer, was die Repräsentativität einschränkt."
 #| fig-width: 10
 #| fig-height: 5
 
@@ -408,13 +450,12 @@ kurven_diagramm
 
 ## Nettozuwanderung nach Herkunftsland
 
-Die geographische Nähe spielt eine wichtige
-Rolle. Deutschland und Frankreich, die beiden wichtigsten Nachbarländer
-der Schweiz, verzeichnen mit Abstand die meisten Einwanderungen.
-Überraschenderweise weist Portugal eine höhere Einwanderung als Italien auf,
-was möglicherweise damit zusammenhängt, dass viele italienische Arbeitnehmer
-als Grenzgänger in der Schweiz arbeiten, aber in Italien wohnen bleiben und
-daher nicht als Einwanderer gezählt werden.
+Die geographische Nähe spielt eine wichtige Rolle. Deutschland und Frankreich,
+die beiden wichtigsten Nachbarländer der Schweiz, verzeichnen mit Abstand die
+meisten Einwanderungen. Überraschenderweise weist Portugal eine höhere
+Einwanderung als Italien auf, was möglicherweise damit zusammenhängt, dass
+viele italienische Arbeitnehmer als Grenzgänger in der Schweiz arbeiten, aber
+in Italien wohnen bleiben und daher nicht als Einwanderer gezählt werden.
 
 Spanien zeigt sogar eine negative Nettozuwanderung — mehr Menschen wanderten
 aus der Schweiz nach Spanien aus als umgekehrt. Eine mögliche Erklärung ist,
@@ -422,7 +463,6 @@ dass Spanier nach der Pensionierung in ihre Heimat zurückziehen.
 
 ```{r}
 #| label: fig-balken
-#| fig-cap: "Gesamt-Nettozuwanderung in die Schweiz nach Herkunftsland (1991–2024), absteigend sortiert."
 #| fig-width: 10
 #| fig-height: 6
 
@@ -431,12 +471,19 @@ horizontales_balkendiagramm
 
 ```{r}
 #| label: fig-karte
-#| fig-cap: "Choropleth-Karte der Nettozuwanderung nach europäischen Herkunftsländern. Russland wurde ausgeschlossen, um geografische Verzerrungen zu vermeiden."
 #| fig-width: 10
 #| fig-height: 6
 
 schweiz_migrations_weltkarte
 ```
+
+Die kartografische Darstellung ergänzt das  Balkendiagramm und
+macht die geografische Konzentration auf einen Blick deutlich: Deutschland
+dominiert , was sich in der deutlich dunkleren Einfärbung zeigt. Länder,
+die weiss dargestellt werden, bedeuten dabei nicht dass keine
+Migration stattgefunden hat sondernlediglich, dass für diese Länder
+keine Daten in unserem Datensatz vorhanden sind, da die Analyse auf die
+15 erfassten Herkunftsländer beschränkt ist.
 
 ## Regressionsanalyse
 
@@ -458,7 +505,7 @@ texreg::htmlreg(
   digits             = 3,
   single.row         = FALSE,
   include.f          = TRUE,
-  caption            = "Regressionsergebnisse: Nettozuwanderung"
+  caption            = ""
 )
 ```
 

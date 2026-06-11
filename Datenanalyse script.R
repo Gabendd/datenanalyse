@@ -351,20 +351,41 @@ karten_daten <- rohe_schweizer_einwanderung |>
     .groups = "drop"
   ) |>
   dplyr::mutate(
-    iso_a3 = countrycode::countrycode(
-      herkunft,
-      origin = "country.name",
-      destination = "iso3c"
+    iso_a3 = ifelse(
+      herkunft == "Kosovo",
+      "XKX",
+      countrycode::countrycode(
+        herkunft,
+        origin = "country.name",
+        destination = "iso3c"
+      )
     )
   ) |>
   dplyr::filter(!is.na(iso_a3)) |>
   dplyr::mutate(
-    herkunft_de = countrycode::countrycode(
-      herkunft,
-      origin = "country.name.en",
-      destination = "country.name.de"
+    herkunft_de = ifelse(
+      herkunft == "Kosovo",
+      "Kosovo",
+      countrycode::countrycode(
+        herkunft,
+        origin = "country.name.en",
+        destination = "country.name.de"
+      )
     )
   )
+
+missing_country <- rohe_schweizer_einwanderung |>
+  dplyr::group_by(herkunft) |>
+  dplyr::summarise() |>
+  dplyr::mutate(
+    iso_a3 = ifelse(
+      herkunft == "Kosovo",
+      "XKX",
+      countrycode::countrycode(herkunft, "country.name", "iso3c")
+    )
+  ) |>
+  dplyr::filter(is.na(iso_a3))
+print(missing_country$herkunft)
 
 # ------------------------------------------------------------
 # 3. Weltkarte mit Migrationsdaten verbinden
@@ -423,10 +444,6 @@ karten_laender_liste <- karten_daten$herkunft_de
 karten_dataset <- karten_daten |>
   dplyr::select(herkunft_de, netto_zuwanderung, iso_a3)
 
-# Für Quarto speichern
-saveRDS(karten_laender_liste, "data/karten_laender_liste.rds")
-saveRDS(karten_dataset, "data/karten_dataset.rds")
-
 # ============================================================
 # KAPITEL 4 — ZUSÄTZLICHE VISUALISIERUNGEN
 # ============================================================
@@ -454,7 +471,8 @@ kurven_diagramm <- ggplot(
   theme(
     plot.title = element_text(face = "plain", size = 21, hjust = 0.5),
     axis.title = element_text(size = 22),
-    axis.text = element_text(size = 22)
+    axis.text = element_text(size = 22),
+    axis.text.x = element_text(size = 14, margin = margin(t = 10))
   )
 
 print(kurven_diagramm)
@@ -515,6 +533,8 @@ boxplot_vorzeichen <- ggplot(
     plot.title = element_text(face = "plain", size = 21, hjust = 0.5),
     plot.title.position = "plot",
     axis.title = element_text(size = 22),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
     axis.text = element_text(size = 22),
     legend.title = element_text(size = 21),
     legend.text = element_text(size = 14)
@@ -558,10 +578,14 @@ laender_gesamt <- rohe_schweizer_einwanderung |>
   ) |>
   dplyr::arrange(desc(gesamt_netto_zuwanderung)) |>
   dplyr::mutate(
-    herkunft_de = countrycode::countrycode(
-      herkunft,
-      origin = "country.name.en",
-      destination = "country.name.de"
+    herkunft_de = ifelse(
+      herkunft == "Kosovo",
+      "Kosovo",
+      countrycode::countrycode(
+        herkunft,
+        origin = "country.name.en",
+        destination = "country.name.de"
+      )
     )
   )
 
@@ -587,6 +611,18 @@ horizontales_balkendiagramm <- ggplot(
   )
 ) +
   geom_col(fill = "#08519c", color = "white", linewidth = 0.2) +
+  geom_text(
+    aes(
+      label = scales::comma(
+        gesamt_netto_zuwanderung,
+        big.mark = ".",
+        decimal.mark = ","
+      )
+    ),
+    hjust = -0.1,
+    color = "black",
+    size = 4
+  ) +
   labs(
     x = "Gesamt Nettozuwanderung",
     y = "Herkunftsland",
@@ -597,10 +633,15 @@ horizontales_balkendiagramm <- ggplot(
     labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
   ) +
   theme(
-    plot.title = element_text(face = "plain", size = 21, hjust = 0.5),
-    axis.title = element_text(size = 22),
-    axis.text = element_text(size = 22),
-    axis.text.y = element_text(size = 21)
+    plot.title = element_text(
+      face = "plain",
+      size = 16,
+      hjust = 0.5,
+      margin = margin(b = 10)
+    ),
+    axis.title = element_text(size = 20),
+    axis.text = element_text(size = 20),
+    axis.text.y = element_text(size = 17, margin = margin(r = 5))
   )
 
 # Plot zeigen
@@ -660,7 +701,6 @@ regressionsdaten <- analysedaten_schweiz |>
   dplyr::select(netto_zuwanderung, bip_wachstum, arbeitslosenquote)
 
 # Als Sicherheit speichern wir die Regressionsdaten auch als CSV Datei.
-
 readr::write_csv(regressionsdaten, "data/regressionsdaten.csv")
 
 # Jetzt Modell 1 schätzen.
