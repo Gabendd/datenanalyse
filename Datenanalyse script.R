@@ -357,7 +357,14 @@ karten_daten <- rohe_schweizer_einwanderung |>
       destination = "iso3c"
     )
   ) |>
-  dplyr::filter(!is.na(iso_a3))
+  dplyr::filter(!is.na(iso_a3)) |>
+  dplyr::mutate(
+    herkunft_de = countrycode::countrycode(
+      herkunft,
+      origin = "country.name.en",
+      destination = "country.name.de"
+    )
+  )
 
 # ------------------------------------------------------------
 # 3. Weltkarte mit Migrationsdaten verbinden
@@ -394,19 +401,32 @@ schweiz_migrations_weltkarte <- ggplot2::ggplot(weltkarte) +
   ) +
   ggplot2::labs(
     title = "Nettozuwanderung in die Schweiz nach Herkunftsland (Europa)",
-    fill = "",
-    caption = "Nur die 15 Herkunftsländer aus den Einwanderungsdaten"
+    fill = ""
   ) +
   ggplot2::theme_void() +
   ggplot2::theme(
-    plot.title = ggplot2::element_text(face = "bold", size = 14),
+    plot.title = ggplot2::element_text(face = "plain", size = 21, hjust = 0.5),
+    plot.title.position = "plot",
     legend.title = ggplot2::element_blank(),
+    legend.text = ggplot2::element_text(size = 21),
     plot.caption = ggplot2::element_text(size = 9, hjust = 0)
   )
 
 print(schweiz_migrations_weltkarte)
 
 #Hier sehen wir also eine Karte mit nur 15 Ländern, die in den Einwanderungsdaten enthalten sind.
+
+# Liste aller in der Karte dargestellten Herkunftsländer (Deutsch)
+karten_laender_liste <- karten_daten$herkunft_de
+
+# Dataset mit den Kartendaten (Herkunftsländer + Nettozuwanderung, Deutsch)
+karten_dataset <- karten_daten |>
+  dplyr::select(herkunft_de, netto_zuwanderung, iso_a3)
+
+# Für Quarto speichern
+saveRDS(karten_laender_liste, "data/karten_laender_liste.rds")
+saveRDS(karten_dataset, "data/karten_dataset.rds")
+
 # ============================================================
 # KAPITEL 4 — ZUSÄTZLICHE VISUALISIERUNGEN
 # ============================================================
@@ -425,12 +445,16 @@ kurven_diagramm <- ggplot(
     x = "Jahr",
     y = "Nettozuwanderung",
     title = "Nettozuwanderung in die Schweiz nach Jahr",
-    subtitle = "Gesamtwert für alle Herkunftsländer kombiniert"
   ) +
   theme_minimal() +
   scale_x_continuous(breaks = seq(1990, 2025, by = 5)) +
   scale_y_continuous(
     labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
+  ) +
+  theme(
+    plot.title = element_text(face = "plain", size = 21, hjust = 0.5),
+    axis.title = element_text(size = 22),
+    axis.text = element_text(size = 22)
   )
 
 print(kurven_diagramm)
@@ -482,11 +506,18 @@ boxplot_vorzeichen <- ggplot(
     x = "",
     y = "Nettozuwanderung",
     title = "Nettozuwanderung nach Vorzeichen",
-    subtitle = "Vergleich zwischen Jahren mit Einwanderung und Auswanderung"
   ) +
   theme_minimal() +
   scale_y_continuous(
     labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
+  ) +
+  theme(
+    plot.title = element_text(face = "plain", size = 21, hjust = 0.5),
+    plot.title.position = "plot",
+    axis.title = element_text(size = 22),
+    axis.text = element_text(size = 22),
+    legend.title = element_text(size = 21),
+    legend.text = element_text(size = 14)
   )
 
 print(boxplot_vorzeichen)
@@ -525,7 +556,14 @@ laender_gesamt <- rohe_schweizer_einwanderung |>
     gesamt_netto_zuwanderung = sum(netto_zuwanderung, na.rm = TRUE),
     .groups = "drop"
   ) |>
-  dplyr::arrange(desc(gesamt_netto_zuwanderung))
+  dplyr::arrange(desc(gesamt_netto_zuwanderung)) |>
+  dplyr::mutate(
+    herkunft_de = countrycode::countrycode(
+      herkunft,
+      origin = "country.name.en",
+      destination = "country.name.de"
+    )
+  )
 
 laender_gesamt
 
@@ -545,7 +583,7 @@ horizontales_balkendiagramm <- ggplot(
   laender_gesamt,
   aes(
     x = gesamt_netto_zuwanderung,
-    y = reorder(herkunft, gesamt_netto_zuwanderung)
+    y = reorder(herkunft_de, gesamt_netto_zuwanderung)
   )
 ) +
   geom_col(fill = "#08519c", color = "white", linewidth = 0.2) +
@@ -553,11 +591,16 @@ horizontales_balkendiagramm <- ggplot(
     x = "Gesamt Nettozuwanderung",
     y = "Herkunftsland",
     title = "Gesamt Nettozuwanderung in die Schweiz nach Herkunftsland",
-    subtitle = "Summe über den gesamten Zeitraum (1991-2024)"
   ) +
   theme_minimal() +
   scale_x_continuous(
     labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
+  ) +
+  theme(
+    plot.title = element_text(face = "plain", size = 21, hjust = 0.5),
+    axis.title = element_text(size = 22),
+    axis.text = element_text(size = 22),
+    axis.text.y = element_text(size = 21)
   )
 
 # Plot zeigen

@@ -1,0 +1,598 @@
+---
+title: "Der Effekt des BIP-Wachstums auf die Nettozuwanderung in die Schweiz"
+author: "Vincent Pickert - 2020-061-610"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-title: "Inhaltsverzeichnis"
+    theme: cosmo
+    self-contained: true
+  pdf:
+    toc: true
+    toc-title: "Inhaltsverzeichnis"
+    number-sections: true
+    geometry: margin=2.5cm
+lang: de
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+
+erforderliche_pakete <- c(
+  "readr", "dplyr", "stringr", "stringi", "ggplot2", "WDI",
+  "rnaturalearth", "countrycode", "huxtable", "scales", "sf",
+  "tibble", "broom", "stargazer", "texreg", "tidyr", "codetools",
+  "rvest", "gtsummary", "gt"
+)
+
+options(scipen = 999)
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+fehlende_pakete <- setdiff(erforderliche_pakete, rownames(installed.packages()))
+if (length(fehlende_pakete) > 0) install.packages(fehlende_pakete)
+
+invisible(lapply(erforderliche_pakete, library, character.only = TRUE))
+
+pfade <- c("tabellen", "grafiken", "data")
+invisible(lapply(pfade, function(p) {
+  if (!dir.exists(p)) dir.create(p, recursive = TRUE)
+}))
+```
+
+```{r}
+#| label: daten-import
+
+if (file.exists("data/swiss_immigration_countries_year.csv")) {
+  rohe_schweizer_einwanderung <- readr::read_csv(
+    "data/swiss_immigration_countries_year.csv", show_col_types = FALSE
+  )
+} else {
+  rohe_schweizer_einwanderung <- readr::read_csv(
+    "https://raw.githubusercontent.com/Gabendd/datenanalyse/main/data/swiss_immigration_countries_year.csv",
+    show_col_types = FALSE
+  )
+}
+
+rohe_schweizer_einwanderung <- rohe_schweizer_einwanderung |>
+  dplyr::mutate(
+    jahr              = as.integer(year),
+    netto_zuwanderung = as.numeric(net_migration)
+  ) |>
+  dplyr::rename(herkunft = origin_en) |>
+  dplyr::filter(
+    !herkunft %in% c(
+      "Afrique", "Amérique", "Asie", "Océanie",
+      "EFTA countries", "Yugoslavia", "Serbia and Montenegro"
+    ),
+    !stringr::str_detect(herkunft, "Renseignements|Source|© OFS")
+  ) |>
+  dplyr::select(herkunft, jahr, netto_zuwanderung) |>
+  dplyr::arrange(herkunft, jahr)
+
+jahresdaten_schweizer_einwanderung <- rohe_schweizer_einwanderung |>
+  dplyr::group_by(jahr) |>
+  dplyr::summarize(
+    netto_zuwanderung = sum(netto_zuwanderung, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  dplyr::arrange(jahr)
+```
+
+```{r}
+#| label: worldbank-import
+
+indikatoren_liste <- tibble::tibble(
+  Code = c("NY.GDP.MKTP.KD.ZG", "SL.UEM.TOTL.ZS"),
+  Description = c(
+    "BIP-Wachstum (jährlich in %)",
+    "Arbeitslosigkeit, insgesamt (% der Erwerbsbevölkerung)"
+  )
+)
+
+indikatoren         <- indikatoren_liste$Code
+weltbank_datei_pfad <- "data/world_bank_raw.rds"
+start_jahr <- min(jahresdaten_schweizer_einwanderung$jahr, na.rm = TRUE)
+end_jahr   <- max(jahresdaten_schweizer_einwanderung$jahr, na.rm = TRUE)
+
+weltbank_daten_abrufen <- function() {
+  WDI::WDI(
+    country   = "CHE",
+    indicator = indikatoren,
+    start     = start_jahr,
+    end       = end_jahr,
+    extra     = TRUE
+  )
+}
+
+if (!file.exists(weltbank_datei_pfad)) {
+  weltbank_rohe_daten <- weltbank_daten_abrufen()
+  saveRDS(weltbank_rohe_daten, weltbank_datei_pfad)
+} else {
+  temp_pruefung    <- readRDS(weltbank_datei_pfad)
+  fehlend_in_datei <- setdiff(indikatoren, names(temp_pruefung))
+  if (length(fehlend_in_datei) > 0) {
+    weltbank_rohe_daten <- weltbank_daten_abrufen()
+    saveRDS(weltbank_rohe_daten, weltbank_datei_pfad)
+  } else {
+    weltbank_rohe_daten <- temp_pruefung
+  }
+  rm(temp_pruefung, fehlend_in_datei)
+}
+
+schweizer_weltbank_daten <- weltbank_rohe_daten |>
+  dplyr::select(year, dplyr::all_of(indikatoren)) |>
+  dplyr::rename(
+    jahr              = year,
+    bip_wachstum      = NY.GDP.MKTP.KD.ZG,
+    arbeitslosenquote = SL.UEM.TOTL.ZS
+  ) |>
+  dplyr::arrange(jahr)
+
+analysedaten_schweiz <- jahresdaten_schweizer_einwanderung |>
+  dplyr::left_join(schweizer_weltbank_daten, by = "jahr") |>
+  dplyr::arrange(jahr)
+```
+
+```{r}
+#| label: visualisierungen
+
+# Karte
+welt <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf")
+
+karten_daten <- rohe_schweizer_einwanderung |>
+  dplyr::group_by(herkunft) |>
+  dplyr::summarise(
+    netto_zuwanderung = sum(netto_zuwanderung, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  dplyr::mutate(
+    iso_a3 = countrycode::countrycode(herkunft, "country.name", "iso3c")
+  ) |>
+  dplyr::filter(!is.na(iso_a3))
+
+weltkarte_sf <- welt |>
+  dplyr::mutate(iso_a3 = dplyr::coalesce(iso_a3_eh, iso_a3)) |>
+  dplyr::filter(
+    continent  == "Europe",
+    !name_long %in% "Russian Federation",
+    !is.na(iso_a3),
+    iso_a3     != "-99"
+  ) |>
+  dplyr::left_join(karten_daten, by = "iso_a3")
+
+schweiz_migrations_weltkarte <- ggplot2::ggplot(weltkarte_sf) +
+  ggplot2::geom_sf(
+    ggplot2::aes(fill = netto_zuwanderung),
+    color = "white", linewidth = 0.2
+  ) +
+  ggplot2::scale_fill_gradient(
+    low = "#deebf7", high = "#08519c", na.value = "grey90"
+  ) +
+  ggplot2::labs(
+    title   = "Nettozuwanderung in die Schweiz nach Herkunftsland (Europa)",
+    fill    = "",
+    caption = "Nur die 15 Herkunftsländer aus den Einwanderungsdaten"
+  ) +
+  ggplot2::theme_void() +
+  ggplot2::theme(
+    plot.title   = ggplot2::element_text(face = "bold", size = 14),
+    plot.caption = ggplot2::element_text(size = 9, hjust = 0)
+  )
+
+# Zeitreihe
+kurven_diagramm <- ggplot2::ggplot(
+  jahresdaten_schweizer_einwanderung,
+  ggplot2::aes(x = jahr, y = netto_zuwanderung)
+) +
+  ggplot2::geom_line(color = "#08519c", linewidth = 1) +
+  ggplot2::geom_point(color = "#08519c", size = 2) +
+  ggplot2::labs(
+    x        = "Jahr",
+    y        = "Nettozuwanderung",
+    title    = "Nettozuwanderung in die Schweiz nach Jahr",
+    subtitle = "Gesamtwert für alle Herkunftsländer kombiniert"
+  ) +
+  ggplot2::theme_minimal() +
+  ggplot2::scale_x_continuous(breaks = seq(1990, 2025, by = 5)) +
+  ggplot2::scale_y_continuous(
+    labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
+  )
+
+# Boxplot
+jahresdaten_mit_vorzeichen <- jahresdaten_schweizer_einwanderung |>
+  dplyr::mutate(
+    migration_sign = ifelse(
+      netto_zuwanderung >= 0,
+      "Einwanderung (positiv)",
+      "Auswanderung (negativ)"
+    )
+  )
+
+boxplot_vorzeichen <- ggplot2::ggplot(
+  jahresdaten_mit_vorzeichen,
+  ggplot2::aes(x = migration_sign, y = netto_zuwanderung, fill = migration_sign)
+) +
+  ggplot2::geom_boxplot() +
+  ggplot2::scale_fill_manual(
+    values = c(
+      "Einwanderung (positiv)" = "#2ca25f",
+      "Auswanderung (negativ)" = "#de2d26"
+    ),
+    name = "Migrationsrichtung"
+  ) +
+  ggplot2::labs(
+    x        = "",
+    y        = "Nettozuwanderung",
+    title    = "Nettozuwanderung nach Vorzeichen",
+    subtitle = "Vergleich zwischen Jahren mit Einwanderung und Auswanderung"
+  ) +
+  ggplot2::theme_minimal() +
+  ggplot2::scale_y_continuous(
+    labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
+  )
+
+zusammenfassung <- jahresdaten_mit_vorzeichen |>
+  dplyr::group_by(migration_sign) |>
+  dplyr::summarize(
+    Anzahl     = n(),
+    Mittelwert = mean(netto_zuwanderung),
+    Median     = median(netto_zuwanderung),
+    SD         = sd(netto_zuwanderung),
+    Min        = min(netto_zuwanderung),
+    Max        = max(netto_zuwanderung),
+    IQR        = IQR(netto_zuwanderung)
+  )
+
+# Balkendiagramm
+laender_gesamt <- rohe_schweizer_einwanderung |>
+  dplyr::group_by(herkunft) |>
+  dplyr::summarise(
+    gesamt_netto_zuwanderung = sum(netto_zuwanderung, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  dplyr::arrange(desc(gesamt_netto_zuwanderung))
+
+horizontales_balkendiagramm <- ggplot2::ggplot(
+  laender_gesamt,
+  ggplot2::aes(
+    x = gesamt_netto_zuwanderung,
+    y = reorder(herkunft, gesamt_netto_zuwanderung)
+  )
+) +
+  ggplot2::geom_col(fill = "#08519c", color = "white", linewidth = 0.2) +
+  ggplot2::labs(
+    x        = "Gesamt Nettozuwanderung",
+    y        = "Herkunftsland",
+    title    = "Gesamt Nettozuwanderung in die Schweiz nach Herkunftsland",
+    subtitle = "Summe über den gesamten Zeitraum (1991–2024)"
+  ) +
+  ggplot2::theme_minimal() +
+  ggplot2::scale_x_continuous(
+    labels = scales::comma_format(big.mark = ".", decimal.mark = ",")
+  )
+```
+
+```{r}
+#| label: regressionen
+
+regressionsdaten <- analysedaten_schweiz |>
+  dplyr::select(netto_zuwanderung, bip_wachstum, arbeitslosenquote)
+
+readr::write_csv(regressionsdaten, "data/regressionsdaten.csv")
+
+modell_1_bip <- lm(
+  netto_zuwanderung ~ bip_wachstum,
+  data = regressionsdaten
+)
+
+modell_2_bip_arbeitslosenquote <- lm(
+  netto_zuwanderung ~ bip_wachstum + arbeitslosenquote,
+  data = regressionsdaten
+)
+
+korrelationsmatrix <- cor(regressionsdaten)
+
+acf_objekt <- stats::acf(
+  residuals(modell_2_bip_arbeitslosenquote),
+  plot      = FALSE,
+  na.action = na.pass
+)
+
+n_beobachtungen <- length(stats::na.omit(
+  residuals(modell_2_bip_arbeitslosenquote)
+))
+konfidenzgrenze <- 1.96 / sqrt(n_beobachtungen)
+
+autokorrelations_daten <- tibble::tibble(
+  lag = as.numeric(acf_objekt$lag),
+  acf = as.numeric(acf_objekt$acf)
+) |>
+  dplyr::filter(lag > 0)
+```
+
+# Forschungsfrage und Hypothesen
+
+Diese Arbeit untersucht den Effekt des BIP-Wachstums auf die Nettozuwanderung
+in die Schweiz, kontrolliert für die Arbeitslosenquote. Es wird erwartet, dass
+die Nettozuwanderung stark durch das BIP-Wachstum beeinflusst wird, da dies
+ein direkter Indikator für die Wirtschaftslage ist und die Einwanderung direkt
+beeinflusst.
+
+Die Arbeitslosenquote wird als Kontrollvariable einbezogen, da sie die
+Einwanderung auf eine direktere Weise als Arbeitsmarktindikator beeinflusst.
+Durch einen längeren Zeitraum wird die Analyse weniger durch einzelne Ereignisse
+wie die Finanzkrise 2008 verzerrt.
+
+Die zwei Regressionsmodelle lauten:
+
+$$\text{Nettozuwanderung}_i = \beta_0 + \beta_1 \times \text{BIP-Wachstum}_i + \varepsilon_i$$
+
+$$\text{Nettozuwanderung}_i = \beta_0 + \beta_1 \times \text{BIP-Wachstum}_i + \beta_2 \times \text{Arbeitslosenquote}_i + \varepsilon_i$$
+
+Dabei repräsentiert $\beta_0$ die Konstante (Nettozuwanderung bei
+BIP-Wachstum und Arbeitslosenquote von 0), $\beta_1$ den Effekt des
+BIP-Wachstums, $\beta_2$ den Effekt der Arbeitslosenquote und $\varepsilon_i$
+den Fehlerterm.
+
+# Daten und Methoden
+
+## Datenquellen
+
+Die Schweizer Einwanderungsdaten (die abhängige Variable) stammen vom
+Bundesamt für Statistik (BFS) und wurden als CSV-Dateien manuell heruntergeladen.
+Sie enthalten Angaben zu Herkunftsland, Jahr und Nettozuwanderung. Der Datensatz
+umfasst 15 europäische Länder, davon die Mehrheit der EU-Länder. Die Beschränkung
+auf 15 Länder geht auf einen bestehenden Datensatz einer Masterarbeit zurück und
+könnte die Repräsentativität der Ergebnisse begrenzen.
+
+Die wirtschaftlichen Indikatoren (unabhängige und Kontrollvariable) stammen von
+der Weltbank:
+
+- Jährliches BIP-Wachstum (Weltbank-ID: `NY.GDP.MKTP.KD.ZG`)
+- Arbeitslosenquote (Weltbank-ID: `SL.UEM.TOTL.ZS`)
+
+# Ergebnisse
+
+## Deskriptive Statistik
+
+Bei der Datenaufbereitung zeigte sich, dass die Nettozuwanderung ein Minimum
+von −10'589 aufweist, was bedeutet, dass es Jahre gab, in denen die Schweiz
+mehr Auswanderungen als Einwanderungen verzeichnete. Der Median von 29'210
+liegt unter dem Mittelwert von 32'34, was auf einzelne Jahre mit sehr hoher
+Zuwanderung hindeutet.
+
+```{r}
+#| label: fig-boxplot
+#| fig-width: 9
+#| fig-height: 5
+
+boxplot_vorzeichen
+```
+
+```{r}
+#| label: tbl-zusammenfassung
+
+knitr::kable(
+  zusammenfassung,
+  digits      = 0,
+  format.args = list(big.mark = "'"),
+  caption     = "Deskriptive Kennzahlen nach Migrationsrichtung."
+)
+```
+
+Es gibt nur 4 Jahre mit negativer Nettozuwanderung, aber 30 Jahre mit positiver
+Nettozuwanderung.
+
+## Zeitliche Entwicklung der Nettozuwanderung
+
+Die Nettozuwanderung in die Schweiz durchlief unterschiedliche Phasen: einen
+Rückgang zwischen 1995 und 2000 (inklusive Auswanderungsphase), ein starkes
+Wachstum ab 2000, einen Rückgang während der Finanzkrise 2008 mit anschliessender
+Erholung sowie einen erneuten Rückgang nach 2014. Wie zuvor gezeigt, überwiegen
+insgesamt die Einwanderungsjahre deutlich gegenüber den Auswanderungsjahren.
+
+```{r}
+#| label: fig-zeitreihe
+#| fig-cap: "Jährliche Nettozuwanderung in die Schweiz (1991–2024). Hinweis: Die Daten beziehen sich nur auf 15 Herkunftsländer, was die Repräsentativität einschränkt."
+#| fig-width: 10
+#| fig-height: 5
+
+kurven_diagramm
+```
+
+## Nettozuwanderung nach Herkunftsland
+
+Die geographische Nähe spielt eine wichtige
+Rolle. Deutschland und Frankreich, die beiden wichtigsten Nachbarländer
+der Schweiz, verzeichnen mit Abstand die meisten Einwanderungen.
+Überraschenderweise weist Portugal eine höhere Einwanderung als Italien auf,
+was möglicherweise damit zusammenhängt, dass viele italienische Arbeitnehmer
+als Grenzgänger in der Schweiz arbeiten, aber in Italien wohnen bleiben und
+daher nicht als Einwanderer gezählt werden.
+
+Spanien zeigt sogar eine negative Nettozuwanderung — mehr Menschen wanderten
+aus der Schweiz nach Spanien aus als umgekehrt. Eine mögliche Erklärung ist,
+dass Spanier nach der Pensionierung in ihre Heimat zurückziehen.
+
+```{r}
+#| label: fig-balken
+#| fig-cap: "Gesamt-Nettozuwanderung in die Schweiz nach Herkunftsland (1991–2024), absteigend sortiert."
+#| fig-width: 10
+#| fig-height: 6
+
+horizontales_balkendiagramm
+```
+
+```{r}
+#| label: fig-karte
+#| fig-cap: "Choropleth-Karte der Nettozuwanderung nach europäischen Herkunftsländern. Russland wurde ausgeschlossen, um geografische Verzerrungen zu vermeiden."
+#| fig-width: 10
+#| fig-height: 6
+
+schweiz_migrations_weltkarte
+```
+
+## Regressionsanalyse
+
+Es wurden zwei lineare Regressionsmodelle geschätzt, um die jährliche
+Nettozuwanderung zu erklären:
+
+- **Modell 1:** Nettozuwanderung ~ BIP-Wachstum
+- **Modell 2:** Nettozuwanderung ~ BIP-Wachstum + Arbeitslosenquote
+
+```{r}
+#| label: tbl-regression
+#| results: asis
+
+texreg::htmlreg(
+  list(Modell_1 = modell_1_bip, Modell_2 = modell_2_bip_arbeitslosenquote),
+  custom.model.names = c("Modell 1", "Modell 2"),
+  custom.coef.names  = c("(Intercept)", "BIP-Wachstum", "Arbeitslosenquote"),
+  custom.note        = "Abhängige Variable: Nettozuwanderung. Signifikanz: * p < 0.05, ** p < 0.01, *** p < 0.001",
+  digits             = 3,
+  single.row         = FALSE,
+  include.f          = TRUE,
+  caption            = "Regressionsergebnisse: Nettozuwanderung"
+)
+```
+
+Modell 1 zeigt, dass ein Anstieg des BIP-Wachstums um einen Prozentpunkt mit
+einer um durchschnittlich 1'163 Personen höheren Nettozuwanderung verbunden ist,
+dieser Effekt ist jedoch statistisch nicht signifikant (p > 0.05). Das Modell
+erklärt nur 0.9 % der Variation (R² = 0.009).
+
+In Modell 2 ist unter Kontrolle der Arbeitslosenquote ein zusätzlicher
+Prozentpunkt BIP-Wachstum mit 187 Personen weniger Nettozuwanderung verbunden
+(nicht signifikant). Ein Anstieg der Arbeitslosenquote um einen Prozentpunkt
+ist mit einer um durchschnittlich 11'709 Personen höheren Nettozuwanderung
+verbunden (hoch signifikant, p < 0.01). Dieser positive Effekt ist
+kontraintuitiv und deutet darauf hin, dass das Modell nicht alle relevanten
+Faktoren erfasst — etwa das Freizügigkeitsabkommen, die EU-Mitgliedschaft der
+Herkunftsländer oder die dortige Arbeitsmarktsituation. R² = 0.214.
+
+## Deskriptive Statistik nach Migrationsrichtung
+
+```{r}
+#| label: tbl-deskriptiv
+
+deskriptive_tabelle <- analysedaten_schweiz |>
+  dplyr::mutate(
+    migrationsrichtung = ifelse(
+      netto_zuwanderung >= 0, "Einwanderung", "Auswanderung"
+    )
+  ) |>
+  dplyr::select(
+    migrationsrichtung, netto_zuwanderung, bip_wachstum, arbeitslosenquote
+  ) |>
+  gtsummary::tbl_summary(
+    by        = migrationsrichtung,
+    label     = list(
+      netto_zuwanderung ~ "Nettozuwanderung",
+      bip_wachstum      ~ "BIP-Wachstum (%)",
+      arbeitslosenquote ~ "Arbeitslosenquote (%)"
+    ),
+    statistic = list(all_continuous() ~ "{mean} ({sd})"),
+    digits    = all_continuous() ~ 2
+  ) |>
+  gtsummary::modify_header(label = "**Variable**") |>
+  gtsummary::bold_labels() |>
+  gtsummary::add_p() |>
+  gtsummary::as_gt() |>
+  gt::tab_header(
+    title    = "Deskriptive Statistik nach Migrationsrichtung",
+    subtitle = "Mittelwert (Standardabweichung)"
+  )
+
+deskriptive_tabelle
+```
+
+Die deskriptive Tabelle zeigt, dass sich BIP-Wachstum (p = 0.8) und
+Arbeitslosenquote (p = 0.3) zwischen Einwanderungs- und Auswanderungsjahren
+kaum unterscheiden — konsistent mit den nicht signifikanten
+Regressionseffekten.
+
+# Diagnostische Tests
+
+## Multikollinearitätsprüfung
+
+```{r}
+#| label: tbl-korrelation
+
+knitr::kable(
+  round(korrelationsmatrix, 3),
+  caption = "Korrelationsmatrix zwischen Nettozuwanderung, BIP-Wachstum und Arbeitslosenquote."
+)
+```
+
+Ein Korrelationswert von r = 0.238 zwischen den Prädiktoren (BIP-Wachstum und
+Arbeitslosenquote) spricht für eine schwache Korrelation. Das deutet auf kein
+starkes Multikollinearitätsproblem hin.
+
+## Autokorrelationsanalyse
+
+```{r}
+#| label: tbl-acf
+
+knitr::kable(
+  head(autokorrelations_daten, 10),
+  digits  = 3,
+  caption = paste0(
+    "Autokorrelationsfunktion für die Residuen von Modell 2. ",
+    "95%-Konfidenzintervall: ±", round(konfidenzgrenze, 3), "."
+  )
+)
+```
+
+Eine starke positive Autokorrelation bei Lag 1 (0.74) und Lag 2 (0.38)
+überschreitet das 95%-Konfidenzintervall. Dies verletzt die Annahme der
+Unabhängigkeit der Fehlerterme und kann zu verzerrten Standardfehlern und
+Signifikanztests führen. Die Residuen zeigen eine zeitliche Abhängigkeit,
+die nicht durch die Prädiktoren erfasst wird — ein Hinweis auf eine eigene
+Dynamik der Nettozuwanderung über die Zeit.
+
+# Diskussion
+
+Die Analyse zeigt mehrere wichtige Muster der Schweizer Migration. Erstens
+weist die Nettozuwanderung eine hohe Volatilität auf, wobei einige wenige Jahre
+mit extrem hoher Einwanderung den Gesamttrend dominieren. Die Finanzkrise 2008
+hatte einen sichtbaren, aber vorübergehenden Einfluss auf die Migrationsströme.
+
+Zweitens spielt die geographische Nähe eine entscheidende Rolle. Die beiden
+wichtigsten Nachbarländer, Deutschland und Frankreich, verzeichnen mit Abstand
+die meisten Einwanderungen. Der Fall Spanien mit negativer Nettozuwanderung
+deutet auf Rückwanderungsmuster hin, möglicherweise von Rentnern.
+
+Drittens zeigen wirtschaftliche Indikatoren allein eine begrenzte
+Erklärungskraft. Die kontraintuitive positive Beziehung zwischen Arbeitslosigkeit
+und Nettozuwanderung deutet stark auf einen Omitted-Variable-Bias hin.
+
+Viertens gibt es wichtige methodische Einschränkungen: kleine Stichprobengrösse
+(N = 34 Beobachtungen), Beschränkung auf 15 Herkunftsländer, starke
+Autokorrelation in den Residuen sowie fehlende Variablen wie Migrationspolitik
+und wirtschaftliche Bedingungen in den Herkunftsländern.
+
+Die Analyse deutet darauf hin, dass institutionelle und politische Faktoren
+möglicherweise wichtiger sind als inländische wirtschaftliche Bedingungen. Das
+Freizügigkeitsabkommen mit der EU (umgesetzt 2002) hatte wahrscheinlich einen
+erheblichen Einfluss, der von diesem Modell nicht erfasst wird.
+
+# Schlussfolgerung
+
+Obwohl inländische wirtschaftliche Indikatoren einen gewissen Zusammenhang
+mit der Nettozuwanderung in die Schweiz zeigen, erklären sie nur einen
+bescheidenen Teil der Variation. Die Analyse demonstriert, dass die Schweizer
+Migrationsmuster komplex sind und von mehreren Faktoren beeinflusst werden,
+die über einfache wirtschaftliche Indikatoren hinausgehen.
+
+Für zukünftige Forschung wird empfohlen:
+
+- Institutionelle Faktoren wie bilaterale Abkommen und Politikänderungen einzubeziehen
+- Wirtschaftliche und demografische Daten der Herkunftsländer zu integrieren
+- Zeitreihenökonometrische Methoden anzuwenden, um die Autokorrelation zu behandeln
+- Den Datensatz auf alle Herkunftsländer auszuweiten
