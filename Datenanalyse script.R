@@ -83,20 +83,22 @@ if (length(version_mismatches) > 0) {
     ))
   }
   cat("\n")
-  Sys.sleep(10) # 10 Sekunden Pause, damit Nutzer die Warnung lesen kann
+  Sys.sleep(5) # 5 Sekunden Pause, damit Nutzer die Warnung lesen kann
 } else {
   cat("\n✓ Alle Paketversionen entsprechen der Entwicklungs-Umgebung\n")
   cat(
     "  Reproduzierbarkeits-Prüfung abgeschlossen. Skript wird fortgesetzt.\n\n"
   )
-  Sys.sleep(10) # 10 Sekunden Pause, damit Nutzer die Meldung lesen kann
+  Sys.sleep(5) # 5 Sekunden Pause, damit Nutzer die Meldung lesen kann
 }
 
 # ============================================================
 # KAPITEL 1 — SETUP UND PAKETE
 # ============================================================
 # Arbeitsverzeichnis auf den Skript-Speicherort setzen
-if (requireNamespace("rstudioapi", quietly = TRUE) && rstudioapi::isAvailable()) {
+if (
+  requireNamespace("rstudioapi", quietly = TRUE) && rstudioapi::isAvailable()
+) {
   script_pfad <- dirname(rstudioapi::getActiveDocumentContext()$path)
 } else {
   script_pfad <- getwd()
@@ -838,11 +840,6 @@ plot_objekte <- list(
   boxplot_vorzeichen = boxplot_vorzeichen,
   balkendiagramm_laender = horizontales_balkendiagramm
 )
-
-daten_objekte
-matrix_objekte
-modell_objekte
-plot_objekte
 
 # Aufräumen: Lösche alle einzelnen Objekte, die jetzt in den Listen organisiert sind.
 #
