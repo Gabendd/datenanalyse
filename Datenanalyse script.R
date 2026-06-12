@@ -422,7 +422,7 @@ schweiz_migrations_weltkarte <- ggplot2::ggplot(weltkarte) +
   ) +
   ggplot2::labs(
     title = "Nettozuwanderung in die Schweiz nach Herkunftsland (Europa)",
-    fill = ""
+    fill = "Nettozuwanderung (Personen)"
   ) +
   ggplot2::theme_void() +
   ggplot2::theme(
@@ -460,7 +460,7 @@ kurven_diagramm <- ggplot(
   geom_point(color = "#08519c", size = 2) +
   labs(
     x = "Jahr",
-    y = "Nettozuwanderung",
+    y = "Nettozuwanderung (Personen)",
     title = "Nettozuwanderung in die Schweiz nach Jahr",
   ) +
   theme_minimal() +
@@ -522,7 +522,7 @@ boxplot_vorzeichen <- ggplot(
   ) +
   labs(
     x = "",
-    y = "Nettozuwanderung",
+    y = "Nettozuwanderung (Personen)",
     title = "Nettozuwanderung nach Vorzeichen",
   ) +
   theme_minimal() +
@@ -624,7 +624,7 @@ horizontales_balkendiagramm <- ggplot(
     size = 4
   ) +
   labs(
-    x = "Gesamt Nettozuwanderung",
+    x = "Gesamt Nettozuwanderung (Personen)",
     y = "Herkunftsland",
     title = "Gesamt Nettozuwanderung in die Schweiz nach Herkunftsland",
   ) +
