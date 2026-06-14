@@ -1,11 +1,11 @@
-bash
-cat > /mnt/user-data/outputs/bericht_nettozuwanderung.qmd << 'ENDOFFILE'
+
 ---
 title: "Der Effekt des BIP-Wachstums auf die Nettozuwanderung in die Schweiz"
 author: "Vincent Pickert - 2020-061-610"
 author-title: "Autor"
 date: today
 date-format: "D. MMMM YYYY"
+lang: de
 format:
   html:
     toc: true
@@ -28,7 +28,6 @@ format:
     number-sections: true
     geometry: margin=2.5cm
     keep-tex: false
-lang: de
 execute:
   echo: true
   warning: false
@@ -62,8 +61,8 @@ invisible(lapply(pfade, function(p) {
 
 ```{r}
 #| label: daten-import
-#| echo: false
 
+# Einwanderungsdaten laden (lokal oder via GitHub)
 if (file.exists("data/swiss_immigration_countries_year.csv")) {
   rohe_schweizer_einwanderung <- readr::read_csv(
     "data/swiss_immigration_countries_year.csv", show_col_types = FALSE
@@ -102,8 +101,8 @@ jahresdaten_schweizer_einwanderung <- rohe_schweizer_einwanderung |>
 
 ```{r}
 #| label: worldbank-import
-#| echo: false
 
+# World Bank Indikatoren laden und cachen
 indikatoren_liste <- tibble::tibble(
   Code = c("NY.GDP.MKTP.KD.ZG", "SL.UEM.TOTL.ZS"),
   Description = c(
@@ -158,17 +157,18 @@ analysedaten_schweiz <- jahresdaten_schweizer_einwanderung |>
 
 ```{r}
 #| label: visualisierungen
-#| echo: false
 
-# Territorien, die von der Karte ausgeschlossen werden
+# Territorien, die aus der Karte ausgeschlossen werden
+# (geografisch irrelevant oder zu gross / verzerrend)
 auszuschliessende_territorien <- c(
-  "Russian Federation",   # Zu gross, nicht im Datensatz enthalten
-  "Åland Islands",        # Finnische Inselgruppe
-  "Faeroe Islands",       # Daenische Inselgruppe
-  "French Guiana",        # Franzoesisches Ueberseegebiet in Suedamerika
-  "Canary Islands"        # Spanische Inselgruppe
+  "Russian Federation",  # Zu gross, nicht im Datensatz enthalten
+  "Åland Islands",       # Finnische Inselgruppe
+  "Faeroe Islands",      # Dänische Inselgruppe
+  "French Guiana",       # Franzoesisches Ueberseegebiet in Suedamerika
+  "Canary Islands"       # Spanische Inselgruppe
 )
 
+# Kartendaten aufbereiten (Kosovo manuell mit XKX kodiert)
 welt <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf")
 
 karten_daten <- rohe_schweizer_einwanderung |>
@@ -193,10 +193,10 @@ karten_daten <- rohe_schweizer_einwanderung |>
     )
   )
 
+# Alphabetisch sortierte Laenderliste (deutsch) fuer Datenquellen-Tabelle
 karten_laender_liste <- sort(karten_daten$herkunft_de)
 
-# UK und Island explizit einschliessen (werden von Natural Earth nicht als
-# "Europe" klassifiziert)
+# Karte: Europa + UK + Island, ohne grosse/irrelevante Territorien
 weltkarte_sf <- welt |>
   dplyr::mutate(iso_a3 = dplyr::coalesce(iso_a3_eh, iso_a3)) |>
   dplyr::filter(
@@ -224,6 +224,7 @@ schweiz_migrations_weltkarte <- ggplot2::ggplot(weltkarte_sf) +
     legend.text         = ggplot2::element_text(size = 21)
   )
 
+# Zeitreihe
 kurven_diagramm <- ggplot2::ggplot(
   jahresdaten_schweizer_einwanderung,
   ggplot2::aes(x = jahr, y = netto_zuwanderung)
@@ -243,6 +244,7 @@ kurven_diagramm <- ggplot2::ggplot(
     axis.text.x = ggplot2::element_text(size = 14, margin = ggplot2::margin(t = 10))
   )
 
+# Boxplot
 jahresdaten_mit_vorzeichen <- jahresdaten_schweizer_einwanderung |>
   dplyr::mutate(
     migration_sign = ifelse(netto_zuwanderung >= 0,
@@ -287,6 +289,7 @@ zusammenfassung <- jahresdaten_mit_vorzeichen |>
     IQR        = IQR(netto_zuwanderung)
   )
 
+# Balkendiagramm (deutsche Laendernamen, Kosovo-Fix)
 laender_gesamt <- rohe_schweizer_einwanderung |>
   dplyr::group_by(herkunft) |>
   dplyr::summarise(
@@ -330,7 +333,6 @@ horizontales_balkendiagramm <- ggplot2::ggplot(
 
 ```{r}
 #| label: regressionen
-#| echo: false
 
 regressionsdaten <- analysedaten_schweiz |>
   dplyr::select(netto_zuwanderung, bip_wachstum, arbeitslosenquote)
@@ -344,7 +346,7 @@ modell_2_bip_arbeitslosenquote <- lm(
   data = regressionsdaten
 )
 
-# Korrelationsmatrix als einfache Matrix (nicht gt) fuer Inline-R-Zugriff
+# Korrelationsmatrix als numerische Matrix (fuer Inline-Werte und Tabelle)
 korrelationsmatrix <- cor(regressionsdaten)
 
 acf_objekt <- stats::acf(
@@ -402,8 +404,8 @@ der alle nicht erfassten Abweichungen enthält.
 Die Schweizer Einwanderungsdaten (abhängige Variable) stammen vom Bundesamt
 für Statistik (BFS, 2024) und wurden als CSV-Dateien manuell heruntergeladen.
 Sie enthalten Angaben zu Herkunftsland, Jahr und Nettozuwanderung für den
-Zeitraum 1991-2024. Der Datensatz umfasst 15 europäische Länder. Die
-Beschränkung auf 15 Länder geht auf einen bestehenden Datensatz meiner
+Zeitraum 1991--2024. Der Datensatz umfasst 15 europäische Länder. Die
+Beschränkung auf 15 Länder geht auf einen bestehenden Datensatz einer
 Masterarbeit zurück und könnte die Repräsentativität der Ergebnisse begrenzen.
 Die folgende Tabelle zeigt alle enthaltenen Herkunftsländer:
 
@@ -418,12 +420,10 @@ knitr::kable(
 ```
 
 Die wirtschaftlichen Indikatoren (unabhängige und Kontrollvariable) stammen
-von den World Bank Indicators (World Bank, 2024a; 2024b):
+von den World Bank Indicators (Weltbank, 2024a; 2024b):
 
-- Jährliches BIP-Wachstum (Weltbank-ID: `NY.GDP.MKTP.KD.ZG`,
-  [Link](https://data.worldbank.org/indicator/NY.GDP.MKTP.KD.ZG))
-- Arbeitslosenquote (Weltbank-ID: `SL.UEM.TOTL.ZS`,
-  [Link](https://data.worldbank.org/indicator/SL.UEM.TOTL.ZS))
+- Jährliches BIP-Wachstum ([Weltbank-ID: NY.GDP.MKTP.KD.ZG](https://data.worldbank.org/indicator/NY.GDP.MKTP.KD.ZG))
+- Arbeitslosenquote ([Weltbank-ID: SL.UEM.TOTL.ZS](https://data.worldbank.org/indicator/SL.UEM.TOTL.ZS))
 
 # Deskriptive Statistik
 
@@ -534,13 +534,9 @@ deskriptive_tabelle <- analysedaten_schweiz |>
   ) |>
   gtsummary::modify_header(label = "**Variable**") |>
   gtsummary::bold_labels() |>
-  gtsummary::modify_footnote(
-    all_stat_cols() ~ "Mittelwert (Standardabweichung)"
-  ) |>
+  gtsummary::modify_footnote(all_stat_cols() ~ "Mittelwert (Standardabweichung)") |>
   gtsummary::add_p() |>
-  gtsummary::modify_footnote(
-    p.value ~ "Wilcoxon-Rangsummentest"
-  ) |>
+  gtsummary::modify_footnote(p.value ~ "Wilcoxon-Rangsummentest") |>
   gtsummary::as_gt() |>
   gt::tab_header(
     title    = "Deskriptive Statistik nach Migrationsrichtung",
@@ -550,9 +546,7 @@ deskriptive_tabelle <- analysedaten_schweiz |>
 deskriptive_tabelle
 ```
 
-BIP-Wachstum und Arbeitslosenquote unterscheiden sich zwischen Einwanderungs-
-und Auswanderungsjahren gemäss der Tabelle kaum, was mit den nicht signifikanten
-Regressionseffekten konsistent ist.
+BIP-Wachstum und Arbeitslosenquote unterscheiden sich zwischen Einwanderungs- und Auswanderungsjahren gemäss der Tabelle kaum (p = 0.8 bzw. p = 0.3), was mit den nicht signifikanten Regressionseffekten aus Kapitel 5 konsistent ist. Der Wilcoxon-Rangsummentest vergleicht dabei die Verteilungen der Variablen zwischen den beiden Gruppen, indem er alle Beobachtungen gemeinsam rangiert und prüft, ob die durchschnittlichen Ränge zwischen den 4 Auswanderungsjahren und den 30 Einwanderungsjahren systematisch differieren. Während die Nettozuwanderung erwartungsgemäss hochsignifikant unterschiedliche Werte aufweist (p < 0.001), da die Gruppen definitionsgemäss positive bzw. negative Werte aufweisen, zeigen BIP-Wachstum und Arbeitslosenquote keine signifikanten Unterschiede in ihren Verteilungen. Allerdings ist die Teststärke aufgrund der sehr kleinen Stichprobe in der Auswanderungsgruppe (N = 4) begrenzt, sodass ein tatsächlicher, aber kleiner Effekt nicht ausgeschlossen werden kan
 
 # Ergebnisse
 
@@ -591,8 +585,7 @@ if (knitr::is_html_output()) {
 Modell 1 zeigt, dass ein Anstieg des BIP-Wachstums um einen Prozentpunkt mit
 einer um durchschnittlich 1'163 Personen höheren Nettozuwanderung verbunden ist,
 dieser Effekt ist jedoch statistisch nicht signifikant (p > 0.05). Das Modell
-erklärt nur 0.9 % der Variation (R² = 0.009,
-adj. R² = `r round(summary(modell_1_bip)$adj.r.squared, 3)`,
+erklärt nur 0.9 % der Variation (R² = 0.009, adj. R² = `r round(summary(modell_1_bip)$adj.r.squared, 3)`,
 F = `r round(summary(modell_1_bip)$fstatistic[1], 1)`).
 
 In Modell 2 ist unter Kontrolle der Arbeitslosenquote ein zusätzlicher
@@ -604,26 +597,27 @@ verbunden (hoch signifikant, p < 0.01). Das Modell erklärt 21.4 % der Varianz
 F = `r round(summary(modell_2_bip_arbeitslosenquote)$fstatistic[1], 1)`). Die
 starke Zunahme des F-Werts von Modell 1 zu Modell 2 bestätigt, dass die
 Einbeziehung der Arbeitslosenquote das Modell signifikant verbessert, obwohl
-der unerklärte Anteil mit 78.6 % weiterhin hoch bleibt.
+das R² mit 21.4 % immer noch einen grossen unerklärten Anteil aufweist.
 
 Die Veränderung des BIP-Koeffizienten zwischen den beiden Modellen deutet auf
 einen Omitted-Variable-Bias hin. Da BIP-Wachstum und Arbeitslosigkeit positiv
-korreliert sind (r = 0.28, vgl. Korrelationsmatrix) und die Arbeitslosenquote
-einen starken positiven Einfluss auf die Nettozuwanderung hat, wird in Modell 1
-ein Teil dieses Effekts dem BIP-Wachstum zugeschrieben. Durch die Kontrolle der
-Arbeitslosenquote in Modell 2 wird der direkte Effekt des BIP-Wachstums
-isoliert, wodurch sich der Koeffizient von +1'163 auf -187 verändert.
-Ein Korrelationswert von r = 0.28 spricht für eine schwache Korrelation und
-weist auf kein Multikollinearitätsproblem hin:
+korreliert sind (r = 0.24, vgl. Korrelationsmatrix unten) und die
+Arbeitslosenquote einen starken positiven Einfluss auf die Nettozuwanderung hat,
+wird in Modell 1 ein Teil dieses Effekts dem BIP-Wachstum zugeschrieben. Durch
+die Kontrolle der Arbeitslosenquote in Modell 2 wird der direkte Effekt des
+BIP-Wachstums isoliert, wodurch sich der Koeffizient von +1'163 auf -187
+verändert. Ein Korrelationswert von 0.24 zwischen den Prädiktoren spricht für
+eine schwache Korrelation und weist auf kein Multikollinearitätsproblem hin:
 
 ```{r}
 #| label: korrelations-tabelle
 
-knitr::kable(
-  round(korrelationsmatrix, 3),
-  caption = "Korrelationsmatrix der Modellvariablen."
-) |>
-  kableExtra::kable_styling(full_width = FALSE, position = "center")
+# Korrelationsmatrix als gt-Tabelle mit integriertem Titel
+cor(regressionsdaten) |>
+  round(3) |>
+  as.data.frame() |>
+  gt::gt(rownames_to_stub = TRUE) |>
+  gt::tab_header(title = "Korrelationsmatrix der Modellvariablen")
 ```
 
 # Diagnostik
@@ -633,6 +627,7 @@ knitr::kable(
 ```{r}
 #| label: acf-tabelle
 
+# 95%-Konfidenzgrenze fuer Signifikanz: +-0.336 (berechnet als 1.96 / sqrt(n))
 knitr::kable(
   head(autokorrelations_daten, 4),
   digits = 3,
@@ -641,16 +636,18 @@ knitr::kable(
   kableExtra::kable_styling(full_width = FALSE, position = "center")
 ```
 
-Die ersten vier Lags deuten auf eine starke zeitliche Abhängigkeit der Residuen
-hin. Insbesondere Lag 1 (r = `r round(autokorrelations_daten$acf[1], 2)`) und
+Die ersten vier Lags zeigen eine starke zeitliche Abhängigkeit der Residuen.
+Insbesondere Lag 1 (r = `r round(autokorrelations_daten$acf[1], 2)`) und
 Lag 2 (r = `r round(autokorrelations_daten$acf[2], 2)`) überschreiten die
-95%-Konfidenzgrenze von +/-`r round(konfidenzgrenze, 3)` (berechnet als
-1.96 / sqrt(n) mit n = `r n_beobachtungen` Beobachtungen), was darauf hindeutet,
-dass diese Korrelationen nicht zufällig entstanden sind. Die Fehlerterme sind
-damit nicht unabhängig, was eine zentrale Annahme der OLS-Regression verletzt.
-Die Ergebnisse legen nahe, dass das Modell die zeitliche Struktur der Daten
-nicht vollständig erfasst, etwa weil ein langfristiger Trend fehlt oder die
-Nettozuwanderung eines Jahres von den Werten der Vorjahre beeinflusst wird.
+95%-Konfidenzgrenze von +/-1.96/sqrt(n) = +/-`r round(konfidenzgrenze, 3)`,
+was darauf hinweist, dass diese Korrelationen nicht zufällig entstanden sind.
+Die Fehlerterme sind nicht unabhängig voneinander, was eine zentrale Annahme
+der OLS-Regression verletzt. Dies deutet darauf hin, dass das Modell die
+zeitliche Struktur der Daten nicht vollständig erfasst, etwa weil ein
+langfristiger Trend fehlt oder die Nettozuwanderung eines Jahres von den
+Werten der Vorjahre beeinflusst wird. Die hohe Autokorrelation zeigt, dass
+vergangene Migrationswerte die künftigen besser vorhersagen als die
+wirtschaftlichen Variablen allein es erlauben.
 
 # Schluss
 
@@ -664,9 +661,9 @@ Die vorliegenden Ergebnisse sind durch mehrere methodische Einschränkungen
 begrenzt. Der Datensatz umfasst nur 15 Herkunftsländer, was die
 Repräsentativität stark einschränkt. Die im Datensatz ausgewiesenen Jahre mit
 negativer Nettozuwanderung sind ausschliesslich auf diese begrenzte
-Länderauswahl zurückzuführen: Gemäss BFS-Daten (BFS, 2024) hat die Schweiz in
-den untersuchten Jahren gesamthaft nie eine negative Nettozuwanderung
-verzeichnet. Zudem beschränkt sich das Modell auf drei Variablen. Die
+Länderauswahl zurückzuführen: Gemäss BFS-Daten hat die Schweiz in den
+untersuchten Jahren gesamthaft nie eine negative Nettozuwanderung verzeichnet
+(BFS, 2024). Zudem beschränkt sich das Modell auf drei Variablen. Die
 kontraintuitiven Ergebnisse, insbesondere der positive Effekt der
 Arbeitslosenquote, sind eine direkte Folge dieser Einschränkung. Die
 Einwanderung wird durch eine Vielzahl weiterer Faktoren beeinflusst, die im
@@ -674,13 +671,12 @@ vorliegenden Modell nicht berücksichtigt werden (Massey et al., 1993). Die
 Ergebnisse sind daher ausschliesslich im Kontext dieser Arbeit zu
 interpretieren.
 
-# Literaturverzeichnis
+# Bibliographie
 
-**Bundesamt für Statistik (BFS).** (2024). *Ständige ausländische Wohnbevölkerung nach Staatsangehörigkeit, 1991-2024*. Bundesamt für Statistik, Bern. <https://www.bfs.admin.ch>
+BFS (2024). Ständige und nichtständige Wohnbevölkerung nach institutionellen Gliederungen, Geburtsort und Staatsangehörigkeit. Bundesamt für Statistik, Neuchâtel. Abgerufen am 14.06.2026 von https://www.bfs.admin.ch/bfs/de/home/statistiken/bevoelkerung.html
 
-**Massey, D. S., Arango, J., Hugo, G., Kouaouci, A., Pellegrino, A., & Taylor, J. E.** (1993). Theories of international migration: A review and appraisal. *Population and Development Review*, 19(3), 431-466.
+Massey, D. S., Arango, J., Hugo, G., Kouaouci, A., Pellegrino, A. und Taylor, J. E. (1993). Theories of international migration: A review and appraisal. Population and Development Review, 19(3), 431–466. Abgerufen am 14.06.2026.
 
-**World Bank.** (2024a). *GDP growth (annual %) - Switzerland* [Datensatz]. World Bank Open Data. <https://data.worldbank.org/indicator/NY.GDP.MKTP.KD.ZG>
+Weltbank (2024a). GDP growth (annual %). World Bank Open Data. Abgerufen am 14.06.2026 von https://data.worldbank.org/indicator/NY.GDP.MKTP.KD.ZG
 
-**World Bank.** (2024b). *Unemployment, total (% of total labor force) (modeled ILO estimate) - Switzerland* [Datensatz]. World Bank Open Data. <https://data.worldbank.org/indicator/SL.UEM.TOTL.ZS>
-
+Weltbank (2024b). Unemployment, total (% of total labor force) – modeled ILO estimate. World Bank Open Data. Abgerufen am 14.06.2026 von https://data.worldbank.org/indicator/SL.UEM.TOTL.ZS

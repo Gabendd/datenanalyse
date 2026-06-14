@@ -1,7 +1,7 @@
 # ============================================================
 # REPRODUZIERBARKEITS-PRÜFUNG
 # ============================================================
-#UPDATED SCRIPT"
+
 # Definiert die Paketversionen, die während der Entwicklung verwendet wurden
 
 # Hinweis: Die verwendeten World Bank-Daten wurden am 14. Juni 2026 über die API abgerufen.
@@ -32,6 +32,7 @@ erforderliche_versionen <- list(
   gt = "1.3.0"
 )
 
+set.seed(2026)
 
 # ============================================================
 # Versionen prüfen
@@ -389,18 +390,6 @@ karten_daten <- rohe_schweizer_einwanderung |>
     )
   )
 
-missing_country <- rohe_schweizer_einwanderung |>
-  dplyr::group_by(herkunft) |>
-  dplyr::summarise() |>
-  dplyr::mutate(
-    iso_a3 = ifelse(
-      herkunft == "Kosovo",
-      "XKX",
-      countrycode::countrycode(herkunft, "country.name", "iso3c")
-    )
-  ) |>
-  dplyr::filter(is.na(iso_a3))
-print(missing_country$herkunft)
 
 # ------------------------------------------------------------
 # 3. Weltkarte mit Migrationsdaten verbinden
@@ -452,7 +441,7 @@ print(schweiz_migrations_weltkarte)
 
 #Hier sehen wir also eine Karte mit nur 15 Ländern, die in den Einwanderungsdaten enthalten sind.
 
-# Liste aller in der Karte dargestellten Herkunftsländer (Deutsch)
+# Liste aller in der Karte dargestellten Herkunftsländer
 karten_laender_liste <- karten_daten$herkunft_de
 
 # Dataset mit den Kartendaten (Herkunftsländer + Nettozuwanderung, Deutsch)
@@ -826,9 +815,17 @@ deskriptive_tabelle <- analysedaten_schweiz |>
   ) |>
   gtsummary::modify_header(label = "**Variable**") |>
   gtsummary::bold_labels() |>
+  gtsummary::modify_footnote(
+    all_stat_cols() ~ "Mittelwert (Standardabweichung)"
+  ) |>
   gtsummary::add_p() |>
+  gtsummary::modify_footnote(p.value ~ "Wilcoxon-Rangsummentest") |>
   gtsummary::as_gt() |>
-  gt::tab_header(title = "Deskriptive Statistik nach Migrationsrichtung")
+  gt::tab_header(
+    title = "Deskriptive Statistik nach Migrationsrichtung",
+    subtitle = "Mittelwert (Standardabweichung)"
+  )
+
 
 print(deskriptive_tabelle)
 
@@ -905,17 +902,6 @@ autokorrelations_daten
 # Das Modell wird auch von einer zeitlichen Dynamik beeinflusst, die nicht durch die Prädiktoren erfasst wird.
 # Die Residuen zeigen zeitliche Abhängigkeiten und schwanken daher nicht zufällig.
 # Dadurch können insbesondere die Standardfehler und Signifikanztests der geschätzten Effekte verzerrt werden.
-
-# Search all name variations
-grep("Guian|Guyan|French", welt$name_long, ignore.case = TRUE)
-
-# Or check all country names containing "French"
-grep("French", welt$name_long, ignore.case = TRUE)
-
-# Check if it's part of France's geometry
-welt |>
-  filter(name_long == "France") |>
-  select(name_long, continent)
 
 # ============================================================
 # KAPITEL 8 — OBJEKTE IN LISTEN ZUSAMMENFASSEN
