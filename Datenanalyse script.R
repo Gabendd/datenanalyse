@@ -1,8 +1,12 @@
 # ============================================================
 # REPRODUZIERBARKEITS-PRÜFUNG
 # ============================================================
-
+#UPDATED SCRIPT"
 # Definiert die Paketversionen, die während der Entwicklung verwendet wurden
+
+# Hinweis: Die verwendeten World Bank-Daten wurden am 14. Juni 2026 über die API abgerufen.
+# Da externe Datenquellen fortlaufend aktualisiert werden, ist eine exakte Reproduzierbarkeit
+# der Ergebnisse zu einem späteren Zeitpunkt nicht garantiert.
 
 # ============================================================
 erforderliche_versionen <- list(
@@ -344,6 +348,17 @@ welt <- rnaturalearth::ne_countries(
 
 # Die Karte zeigt nur die 15 Herkunftsländer, die in unserem Datensatz enthalten sind.
 # Die Nettozuwanderung wird über den gesamten Zeitraum (1991–2024) pro Herkunftsland aufsummiert.
+
+# Liste der auszuschließenden Territorien (nicht relevant für die Analyse)
+# HINWEIS: Kleine europäische Staaten wie Vatican, Isle of Man, San Marino, Monaco,
+# Liechtenstein und Andorra werden beibehalten, da sie geografisch zu Europa gehören.
+auszuschliessende_territorien <- c(
+  "Russian Federation", # Zu groß, nicht im Datensatz enthalten
+  "Åland Islands", # Finnische Inselgruppe
+  "Faeroe Islands", # Dänische Inselgruppe
+  "French Guiana", # Französisches Überseegebiet in Südamerika
+  "Canary Islands" # Spanische Inselgruppe
+)
 karten_daten <- rohe_schweizer_einwanderung |>
   dplyr::group_by(herkunft) |>
   dplyr::summarise(
@@ -401,8 +416,8 @@ weltkarte <- welt |>
     iso_a3 = dplyr::coalesce(iso_a3_eh, iso_a3)
   ) |>
   dplyr::filter(
-    continent == "Europe",
-    !name_long %in% c("Russian Federation"),
+    continent == "Europe" | name_long %in% c("United Kingdom", "Iceland"),
+    !name_long %in% auszuschliessende_territorien,
     !is.na(iso_a3),
     iso_a3 != "-99"
   ) |>
@@ -835,7 +850,10 @@ print(deskriptive_tabelle)
 # Korrelationsmatrix zwischen Nettozuwanderung, BIP-Wachstum und Arbeitslosenquote.
 # Das zeigt, ob die Prädiktoren stark miteinander korrelieren.
 korrelationsmatrix <- regressionsdaten |>
-  cor()
+  cor() |>
+  as.data.frame() |>
+  gt::gt() |>
+  gt::tab_header(title = "Korrelationsmatrix der Modellvariablen")
 
 # Korrelationsmatrix anzeigen.
 korrelationsmatrix
@@ -862,6 +880,8 @@ autokorrelations_daten <- tibble::tibble(
 ) |>
   dplyr::filter(lag > 0) # Lag 0 entfernen (immer 1, nicht informativ)
 
+# 95%-Konfidenzgrenze für Signifikanz: ±0.336 (berechnet als 1.96 / sqrt(n))
+
 # Anzahl der Beobachtungen berechnen
 n_beobachtungen <- length(stats::na.omit(residuals(
   modell_2_bip_arbeitslosenquote
@@ -885,6 +905,17 @@ autokorrelations_daten
 # Das Modell wird auch von einer zeitlichen Dynamik beeinflusst, die nicht durch die Prädiktoren erfasst wird.
 # Die Residuen zeigen zeitliche Abhängigkeiten und schwanken daher nicht zufällig.
 # Dadurch können insbesondere die Standardfehler und Signifikanztests der geschätzten Effekte verzerrt werden.
+
+# Search all name variations
+grep("Guian|Guyan|French", welt$name_long, ignore.case = TRUE)
+
+# Or check all country names containing "French"
+grep("French", welt$name_long, ignore.case = TRUE)
+
+# Check if it's part of France's geometry
+welt |>
+  filter(name_long == "France") |>
+  select(name_long, continent)
 
 # ============================================================
 # KAPITEL 8 — OBJEKTE IN LISTEN ZUSAMMENFASSEN
