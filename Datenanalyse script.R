@@ -178,7 +178,7 @@ if (file.exists("data/swiss_immigration_countries_year.csv")) {
   )
 } else {
   rohe_schweizer_einwanderung <- readr::read_csv(
-    "https://raw.githubusercontent.com/Gabendd/datenanalyse/main/data/swiss_immigration_countries_year.csv",
+    https://raw.githubusercontent.com/Gabendd/datenanalyse/main/data/regressionsdaten.csv
     show_col_types = FALSE
   )
 }
